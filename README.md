@@ -6,7 +6,7 @@
 ![go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
 ![license](https://img.shields.io/badge/license-TBD-lightgrey)
 
-> ⚠️ **本项目仍在积极开发中，尚未发布稳定版。** 核心链路（Cron 调度 → 执行 → 重试 → DAG 编排 → 监控告警）已联调跑通，但 API 契约与表结构仍可能变更。见 [Roadmap](#roadmap) 与 [已知限制](#已知限制)。
+> ⚠️ **本项目仍在开发中，尚未发布稳定版。** 核心链路（Cron 调度 → 执行 → 重试 → DAG 编排 → 监控告警）已联调跑通，但 API 契约与表结构仍可能变更。见 [Roadmap](#roadmap) 与 [已知限制](#已知限制)。
 
 ---
 
@@ -36,8 +36,12 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 
 ### 开发中 🚧
 
-- DAG 前端视图（API 已就绪）
+- DAG 前端视图
 - 任务导入 / 模板
+- 负载再均衡
+- 定时 DAG任务 
+- 任务导入 / 模板
+- 压测脚本（wrk Lua）
 
 ## 架构
 
@@ -95,7 +99,7 @@ flowchart TB
 ## 技术栈
 
 - **语言/框架**：Go 1.25、Gin、gRPC
-- **存储**：MySQL（sqlx，按业务域分库）、MinIO（结果溢出存储，可选）
+- **存储**：MySQL（sqlx）、MinIO（结果溢出存储，可选）
 - **中间件**：etcd（成员注册/分片/分布式锁）、RabbitMQ（消息任务载荷 + DAG 结果唤醒）
 - **可观测**：Prometheus / Grafana / Alertmanager、zap + lumberjack、pprof
 - **工具链**：google/wire（依赖注入）、snowflake（ID）、viper（配置热加载）
@@ -147,7 +151,7 @@ go build -o bin/dag.exe ./app/cmd/dag
 ./bin/api.exe
 ```
 
-启动顺序：etcd（`scripts/start-etcd.bat`）→ MySQL/RabbitMQ → executor → scheduler → dag → api。
+启动顺序：etcd → MySQL/RabbitMQ → executor → scheduler → dag → api。
 
 ### 4. 验证
 
@@ -206,10 +210,13 @@ go test -race ./app/internal/...   # 竞态检测
 - [x] 手动触发执行 + 结果下载端点
 - [x] JWT 密钥外置到配置
 - [x] 限流中间件默认启用（429）
-- [x] 多活跃节点调度分片与负载再均衡
+- [x] 多活跃节点调度分片
+- [x] 单元测试
+- [ ] 负载再均衡
 - [ ] DAG 前端视图
+- [ ] 定时 DAG任务 
 - [ ] 任务导入 / 模板
-- [ ] v0.1 稳定版发布
+- [ ] 压测脚本（wrk Lua）
 
 ## 已知限制
 
@@ -227,4 +234,4 @@ release  预发布验证
 develop  日常开发主线
 ```
 
-功能开发请基于 `develop` 拉分支，验证后合回 `develop`；`release` 用于集成验证；只有通过全部功能测试与压测的版本才合入 `master` 并打 tag。
+功能开发基于 `develop` 拉分支，验证后合回 `develop`；`release` 用于集成验证；只有通过全部功能测试与压测的版本才合入 `master` 。

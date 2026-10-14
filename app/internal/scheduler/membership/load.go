@@ -9,7 +9,6 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 )
-
 // NodesPrefix 成员与负载上报的 key 前缀，完整 key 为 /scheduler/nodes/<nodeID>。
 // rebalance 的 WatchNodeInfo 按 WithPrefix 监听这个前缀
 const NodesPrefix = "/scheduler/nodes/"
@@ -25,7 +24,7 @@ type NodeLoad struct {
 }
 
 // ReportLoad 一次性上报（调试/手工用）。
-// ★ 常驻进程不要用它：不带租约的 Put 会把 Register 建立的租约 key 覆盖成
+// 常驻进程不要用它：不带租约的 Put 会把 Register 建立的租约 key 覆盖成
 // 无租约 key，节点崩溃后就永远退不出成员表。常驻路径走 LoadReporter
 func ReportLoad(ctx context.Context, cli *clientv3.Client, nodeID string, load *NodeLoad) error {
 	body, err := marshalLoad(nodeID, load)

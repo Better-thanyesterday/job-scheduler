@@ -30,7 +30,6 @@ import (
 //     rebalance 据此感知节点离线
 //   - 优雅退出：Close 主动 Revoke，成员立刻消失，不等 TTL
 //
-// 与 Election 的关系：Elector 保证"谁跑触发"，Registration 保证
 // "成员表里有谁"——两类租约独立，互不影响。
 type Registration struct {
 	cli *clientv3.Client

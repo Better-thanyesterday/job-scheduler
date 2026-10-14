@@ -15,7 +15,7 @@ import (
 	"job-scheduler/app/internal/infra/mysql"
 	repo "job-scheduler/app/internal/infra/mysql/sqlx/repo"
 	"job-scheduler/app/internal/scheduler"
-	"job-scheduler/app/internal/scheduler/leader"
+	"job-scheduler/app/internal/scheduler/membership"
 	"job-scheduler/app/pkg/logger"
 	"job-scheduler/app/pkg/metrics"
 	"job-scheduler/app/pkg/snowflake"
@@ -71,8 +71,8 @@ func main() {
 	}
 
 	// 7. 组件（只构造，不启动——等当选）。
-	//    repusher（投递补偿器）不进 leader 职责：它自带幂等与阈值，
-	//    多实例并行只会有重复推送被抢票丢弃，挂 leader 下反而引入接管的空窗
+	//    repusher（投递补偿器）独立于分片：它自带幂等与阈值，
+	//    多实例并行只会有重复推送被抢票丢弃，无须按成员协调
 	engine := scheduler.NewEngine(
 		repo.NewScheduleRepo(scheduleDB),
 		repo.NewExecutionRegistryRepo(executionDB),
@@ -104,15 +104,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	initLoad := leader.NodeLoad{NodeID: nodeID}
-	reg, err := leader.Register(ctx, etcdCli,
-		leader.NodesPrefix+nodeID, mustNodeLoadJSON(initLoad), 15)
+	initLoad := membership.NodeLoad{NodeID: nodeID}
+	reg, err := membership.Register(ctx, etcdCli,
+		membership.NodesPrefix+nodeID, mustNodeLoadJSON(initLoad), 15)
 	if err != nil {
 		fmt.Printf("register member failed: %v\n", err)
 		return
 	}
 	defer reg.Close(ctx)
-	loader := leader.NewLoadReporter(reg, 10*time.Second, func() *leader.NodeLoad {
+	loader := membership.NewLoadReporter(reg, 10*time.Second, func() *membership.NodeLoad {
 		initLoad.PendingScheduleCount = engine.PendingSchedules()
 		initLoad.UpdateAt = time.Now()
 		return &initLoad
@@ -121,13 +121,13 @@ func main() {
 
 	// 9.2 成员表 watch → HRW 分片过滤器注入 engine；
 	//     成员变动（扩缩容/崩溃退表）下一个触发点自动按新视图归属
-	membership, err := leader.WatchNodeInfo(ctx, etcdCli, nil)
+	members, err := membership.WatchNodeInfo(ctx, etcdCli, nil)
 	if err != nil {
 		fmt.Printf("watch node info failed: %v\n", err)
 		return
 	}
 	engine.SetShardFilter(func(scheduleID int64) bool {
-		owner, err := membership.Assign(scheduleID)
+		owner, err := members.Assign(scheduleID)
 		if err != nil {
 			// 成员表空（启动窗口/全体掉线）：fail-open 全量触发，
 			// GET_LOCK + nextRun CAS 兜底正确性
@@ -155,7 +155,7 @@ func main() {
 }
 
 // mustNodeLoadJSON 成员表注册值的序列化
-func mustNodeLoadJSON(load leader.NodeLoad) string {
+func mustNodeLoadJSON(load membership.NodeLoad) string {
 	b, _ := json.Marshal(load)
 	return string(b)
 }

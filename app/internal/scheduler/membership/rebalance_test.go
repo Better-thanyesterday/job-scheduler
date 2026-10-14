@@ -1,4 +1,4 @@
-package leader
+package membership
 
 import (
 	"encoding/json"

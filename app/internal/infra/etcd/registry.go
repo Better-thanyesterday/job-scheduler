@@ -4,7 +4,7 @@
 //	           崩溃后租约到点 etcd 自动删 key，成员表自动退出
 //	discovery  scheduler 侧——列出在线 executor，供推送方选择目标
 //
-// key 布局（与 scheduler/leader 的 /scheduler/* 前缀区分）：
+// key 布局（与 scheduler/membership 的 /scheduler/* 前缀区分）：
 //
 //	/executors/<workerID>  执行器注册 + 状态心跳（租约绑定）
 package etcd

@@ -1,4 +1,4 @@
-package leader
+package membership
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Membership 成员表：leader 视角的全集群节点负载视图。
+// Membership 成员表：全集群节点负载视图（本节点视角各自维护）。
 // 由 WatchNodeInfo 维护，读走 Snapshot（返回排序副本）
 type Membership struct {
 	mu    sync.Mutex
@@ -40,7 +40,7 @@ func (m *Membership) apply(isPut bool, key string, value []byte) {
 		var load NodeLoad
 		if err := json.Unmarshal(value, &load); err != nil {
 			// 脏数据只跳过不落表，避免坏 json 冒充成员参与分片
-			zap.L().Warn("leader: 成员负载解析失败", zap.String("key", key), zap.Error(err))
+			zap.L().Warn("membership: 成员负载解析失败", zap.String("key", key), zap.Error(err))
 			return
 		}
 		if load.NodeID == "" {
@@ -63,7 +63,7 @@ func (m *Membership) reset(kvs []*mvccpb.KeyValue) {
 		}
 		var load NodeLoad
 		if err := json.Unmarshal(kv.Value, &load); err != nil {
-			zap.L().Warn("leader: 成员负载解析失败（重置）", zap.String("key", string(kv.Key)), zap.Error(err))
+			zap.L().Warn("membership: 成员负载解析失败（重置）", zap.String("key", string(kv.Key)), zap.Error(err))
 			continue
 		}
 		if load.NodeID == "" {
@@ -109,7 +109,7 @@ func WatchNodeInfo(ctx context.Context, cli *clientv3.Client, onChange func(*Mem
 	m := newMembership()
 	resp, err := cli.Get(ctx, NodesPrefix, clientv3.WithPrefix())
 	if err != nil {
-		return nil, fmt.Errorf("leader: 拉取成员表: %w", err)
+		return nil, fmt.Errorf("membership: 拉取成员表: %w", err)
 	}
 	for _, kv := range resp.Kvs {
 		m.apply(true, string(kv.Key), kv.Value)
@@ -127,7 +127,7 @@ func WatchNodeInfo(ctx context.Context, cli *clientv3.Client, onChange func(*Mem
 			case <-resync.C:
 				r, err := cli.Get(ctx, NodesPrefix, clientv3.WithPrefix())
 				if err != nil {
-					zap.L().Warn("leader: 成员表全量校准失败", zap.Error(err))
+					zap.L().Warn("membership: 成员表全量校准失败", zap.Error(err))
 					continue
 				}
 				m.reset(r.Kvs)
@@ -156,7 +156,7 @@ func WatchNodeInfo(ctx context.Context, cli *clientv3.Client, onChange func(*Mem
 func (m *Membership) Assign(scheduleID int64) (string, error) {
 	nodes := m.Snapshot()
 	if len(nodes) == 0 {
-		return "", fmt.Errorf("leader: 成员表为空，无法分片 schedule=%d", scheduleID)
+		return "", fmt.Errorf("membership: 成员表为空，无法分片 schedule=%d", scheduleID)
 	}
 	return BalanceOne(scheduleID, nodeIDs(nodes)), nil
 }

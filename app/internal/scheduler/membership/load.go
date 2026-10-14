@@ -1,4 +1,4 @@
-package leader
+package membership
 
 import (
 	"context"
@@ -33,7 +33,7 @@ func ReportLoad(ctx context.Context, cli *clientv3.Client, nodeID string, load *
 		return err
 	}
 	if _, err := cli.Put(ctx, NodesPrefix+nodeID, body); err != nil {
-		return fmt.Errorf("leader: report load: %w", err)
+		return fmt.Errorf("membership: report load: %w", err)
 	}
 	return nil
 }
@@ -42,7 +42,7 @@ func ReportLoad(ctx context.Context, cli *clientv3.Client, nodeID string, load *
 // NodeID 已在首次注册时写死，心跳只刷新数值）
 func marshalLoad(nodeID string, load *NodeLoad) (string, error) {
 	if load == nil {
-		return "", fmt.Errorf("leader: nil load for node %s", nodeID)
+		return "", fmt.Errorf("membership: nil load for node %s", nodeID)
 	}
 	if nodeID != "" && load.NodeID == "" {
 		load.NodeID = nodeID
@@ -52,7 +52,7 @@ func marshalLoad(nodeID string, load *NodeLoad) (string, error) {
 	}
 	body, err := json.Marshal(load)
 	if err != nil {
-		return "", fmt.Errorf("leader: marshal load: %w", err)
+		return "", fmt.Errorf("membership: marshal load: %w", err)
 	}
 	return string(body), nil
 }
@@ -87,11 +87,11 @@ func (lr *LoadReporter) Run(ctx context.Context) error {
 		case <-ticker.C:
 			body, err := marshalLoad("", lr.sample())
 			if err != nil {
-				zap.L().Warn("leader: 负载采样序列化失败", zap.Error(err))
+				zap.L().Warn("membership: 负载采样序列化失败", zap.Error(err))
 				continue
 			}
 			if err := lr.reg.Update(ctx, body); err != nil {
-				zap.L().Warn("leader: 负载上报失败", zap.Error(err))
+				zap.L().Warn("membership: 负载上报失败", zap.Error(err))
 			}
 		}
 	}

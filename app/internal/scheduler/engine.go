@@ -22,7 +22,7 @@ type Engine struct {
 	wheel        *MultiTimeWheel
 	scheduleRepo schedule.Repository // ListActive / UpdateNextRun / RecordHistory
 	execReg      execution.Registry  // 登记执行
-	tasks        schedule.TaskSource // 按 task_id 批量取任务（构建消息快照）
+	tasks        schedule.TaskSource // 按 task_id 批量取任务
 	pusher       coordination.TaskPusher
 	locks        coordination.LockManager
 	consumerN    int // 触发回调的并发上限

@@ -31,7 +31,6 @@ type Item struct {
 	callback   func() // 私有：回调只能经 Schedule/After 注册
 }
 
-// ---------- 层级 ----------
 
 // wheel 单层时间轮：unit 每格时长，pos 指向"本刻度待处理"的槽
 type wheel struct {

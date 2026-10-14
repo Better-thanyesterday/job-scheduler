@@ -1,4 +1,16 @@
-package leader
+// Package membership 基于 etcd 的调度器多实例协调（多活跃分片模型）。
+//
+//	membership  成员注册——key 绑 TTL 租约，崩溃自动退出成员表
+//	load        负载心跳——周期上报 CPU/内存/待处理量
+//	rebalance   成员表 watch + HRW 确定性分片，成员变动自动再均衡
+//
+// 没有 leader：所有活跃节点对等，触发权按分片归属，正确性由
+// GET_LOCK + nextRun CAS + 抢票幂等兜底（旧选主器已随主备模型移除）。
+//
+// key 布局（本包所有文件共用，勿散落魔法串）：
+//
+//	/scheduler/nodes/<nodeID>  成员注册 + 负载心跳（租约绑定）
+package membership
 
 import (
 	"context"
@@ -58,18 +70,18 @@ func Register(ctx context.Context, cli *clientv3.Client, key, value string, ttlS
 func (r *Registration) claim(ctx context.Context, value string) error {
 	grant, err := r.cli.Grant(ctx, r.ttl)
 	if err != nil {
-		return fmt.Errorf("leader: grant lease for %s: %w", r.key, err)
+		return fmt.Errorf("membership: grant lease for %s: %w", r.key, err)
 	}
 	rollback := func() { _, _ = r.cli.Revoke(context.Background(), grant.ID) }
 
 	if _, err := r.cli.Put(ctx, r.key, value, clientv3.WithLease(grant.ID)); err != nil {
 		rollback()
-		return fmt.Errorf("leader: put %s: %w", r.key, err)
+		return fmt.Errorf("membership: put %s: %w", r.key, err)
 	}
 	ka, err := r.cli.KeepAlive(ctx, grant.ID)
 	if err != nil {
 		rollback()
-		return fmt.Errorf("leader: keepalive %s: %w", r.key, err)
+		return fmt.Errorf("membership: keepalive %s: %w", r.key, err)
 	}
 	r.mu.Lock()
 	r.value = value
@@ -110,7 +122,7 @@ func (r *Registration) pump(ctx context.Context) {
 			}
 		}
 
-		zap.L().Warn("leader: 租约续租中断，重新注册", zap.String("key", r.key))
+		zap.L().Warn("membership: 租约续租中断，重新注册", zap.String("key", r.key))
 		reregistered := false
 		for !reregistered {
 			if err := r.claim(ctx, r.snapshotValue()); err != nil {
@@ -118,7 +130,7 @@ func (r *Registration) pump(ctx context.Context) {
 					_ = r.Close(context.Background())
 					return
 				}
-				zap.L().Error("leader: 重新注册失败，退避重试",
+				zap.L().Error("membership: 重新注册失败，退避重试",
 					zap.String("key", r.key), zap.Error(err), zap.Duration("backoff", backoff))
 				if !sleepCtx(ctx, backoff) {
 					_ = r.Close(context.Background())
@@ -140,7 +152,7 @@ func (r *Registration) Update(ctx context.Context, value string) error {
 	leaseID := r.leaseID
 	r.mu.Unlock()
 	if _, err := r.cli.Put(ctx, r.key, value, clientv3.WithLease(leaseID)); err != nil {
-		return fmt.Errorf("leader: update %s: %w", r.key, err)
+		return fmt.Errorf("membership: update %s: %w", r.key, err)
 	}
 	r.mu.Lock()
 	r.value = value
@@ -161,7 +173,7 @@ func (r *Registration) Close(ctx context.Context) error {
 		cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		if _, err := r.cli.Revoke(cctx, leaseID); err != nil && ctx.Err() == nil {
-			firstErr = fmt.Errorf("leader: revoke %s: %w", r.key, err)
+			firstErr = fmt.Errorf("membership: revoke %s: %w", r.key, err)
 		}
 	})
 	return firstErr
@@ -171,4 +183,22 @@ func (r *Registration) snapshotValue() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.value
+}
+
+// sleepCtx 可取消的 sleep：ctx 取消返回 false
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// nextBackoff 指数退避
+func nextBackoff(cur, max time.Duration) time.Duration {
+	if cur *= 2; cur > max {
+		return max
+	}
+	return cur
 }

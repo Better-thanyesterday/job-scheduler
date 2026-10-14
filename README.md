@@ -125,7 +125,7 @@ cp configs/alertmanager/alertmanager.example.yml configs/alertmanager/alertmanag
 
 ### 2. 建库建表
 
-按域创建 5 个数据库（分库是本项目的硬约定，跨库只存 ID 不做外键），再执行 [sql/schema.sql](sql/schema.sql) 中对应表段（每段前的注释标明归属库）：
+按域创建 5 个数据库，再执行 [sql/schema.sql](sql/schema.sql) 中对应表段（每段前的注释标明归属库）：
 
 ```sql
 CREATE DATABASE job_task DEFAULT CHARACTER SET utf8mb4;
@@ -209,7 +209,7 @@ go test -race ./app/internal/...   # 竞态检测
 - [x] DAG 运行触发 / 编辑 / 启停 / 删除 API
 - [x] 手动触发执行 + 结果下载端点
 - [x] JWT 密钥外置到配置
-- [x] 限流中间件默认启用（429）
+- [x] 限流中间件默认启用
 - [x] 多活跃节点调度分片
 - [x] 单元测试
 - [ ] 负载再均衡
@@ -234,4 +234,4 @@ release  预发布验证
 develop  日常开发主线
 ```
 
-功能开发基于 `develop` 拉分支，验证后合回 `develop`；`release` 用于集成验证；只有通过全部功能测试与压测的版本才合入 `master` 。
+功能开发基于 `develop` 拉分支，验证后合回 `develop`；`release` 用于集成验证；通过全部功能测试与压测的版本合入 `master` 。

@@ -20,7 +20,7 @@ type Dag struct {
 	edges         []Edge // 按 nodeID 引用,不持指针
 }
 
-// New 定义态构造:出生即校验(nodeID 唯一、边引用完整、无环)
+// New 定义态构造:出生校验nodeID 唯一、边引用完整、无环
 func New(name, description string, parallelLimit int32, failFast bool, createdBy int64,
 	nodes []*DagNode, edges []Edge) (*Dag, error) {
 	now := time.Now()
@@ -108,7 +108,15 @@ func (d *Dag) Validate() error {
 	return nil
 }
 
-// checkAcyclic Kahn 拓扑:所有边(不分类型)都构成先后约束
+// checkAcyclic Kahn算法:
+//  1. 计算所有节点的入度
+//  2. 把所有入度为 0 的节点放入队列
+//  3. 循环：
+//     a. 从队列取出一个节点，加入结果序列
+//     b. 把该节点的所有下游节点入度 -1
+//     c. 如果下游入度变成 0，加入队列
+//  4. 直到队列为空
+//  5. 如果结果序列长度 < 总节点数 → 有环
 func (d *Dag) checkAcyclic() error {
 	indegree := make(map[string]int, len(d.nodes))
 	adjacency := make(map[string][]string, len(d.nodes))

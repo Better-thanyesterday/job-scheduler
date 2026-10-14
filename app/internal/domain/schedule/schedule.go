@@ -76,7 +76,7 @@ func Rebuild(id, taskID int64, name string, cron task.Cron, typ ScheduleType,
 	if !misfire.Valid() {
 		return nil, fmt.Errorf("schedule: rebuild id=%d invalid misfire_policy %d", id, misfire)
 	}
-	// ★ 不在这里把"nextRun 已过期"改写为 Expired：持久化状态必须原样回填，
+	// 不在这里把"nextRun 已过期"改写为 Expired：持久化状态必须原样回填，
 	//   过期与否是调度侧的动态判定（compensator 按 nextRun 补发），
 	//   读库时改状态会让 api 展示与 engine 装载都失真
 	return &Schedule{id: id, taskID: taskID, name: name, cron: cron, typ: typ,
@@ -98,7 +98,6 @@ func (s *Schedule) CreatedBy() int64       { return s.createdBy }
 func (s *Schedule) CreatedAt() time.Time   { return s.createdAt }
 func (s *Schedule) UpdatedAt() time.Time   { return s.updatedAt }
 
-// Pause 暂停（需求 2.3）：只有运行中可暂停
 func (s *Schedule) Pause() error {
 	if s.status != StatusRunning {
 		return fmt.Errorf("%w: pause id=%d status=%d", ErrWrongStatus, s.id, s.status)
@@ -150,9 +149,9 @@ func (s *Schedule) SyncAnchor() { s.nextRunAnchor = s.nextRun }
 // MisfirePlan 错过补偿决策：
 // 输入上次运行时间与当前时间，按策略返回应补发的时间点集合。
 // skip → 空 slice；merge → 只含一个合并点；fire_all → 全部错过点（截断上限防雪崩）
-// ★ 调用方（compensator）只对"nextRun 已过期"的 Running 调度调用本方法，
+// 调用方（compensator）只对"nextRun 已过期"的 Running 调度调用本方法，
 // 状态判断留在调度侧，这里只按时间窗口做纯计算。
-// ★ lastRun 为零值（从未跑过，DB 里是 NULL）→ 返回空：没有历史就没有"错过的点"，
+// lastRun 为零值（从未跑过，DB 里是 NULL）→ 返回空：没有历史就没有"错过的点"，
 // 从公元 1 年开始枚举会产出远古 planned → next_run 越界写库报错 / 连环补触发。
 // 从未跑过的调度由调用方补触发一次 nextRun 本身（首个合法点），不走本方法
 func (s *Schedule) MisfirePlan(lastRun, now time.Time, maxPoints int) []time.Time {

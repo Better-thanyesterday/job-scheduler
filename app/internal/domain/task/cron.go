@@ -9,7 +9,6 @@ import (
 
 // Cron 不可变值对象：解析后的 Cron 表达式。
 // 支持标准 5 字段（分 时 日 月 周）与秒级 6 字段（秒 分 时 日 月 周）。
-// 字段语法：* , - / 数字（L/W/# 属 P2 扩展，MVP 不支持，显式报错）
 
 type Cron struct {
 	expr     string
@@ -120,7 +119,7 @@ func (c Cron) match(t time.Time) bool {
 // String 返回原始表达式——保证 Parse(c.String()) == c（往返恒等律的值对象版）
 func (c Cron) String() string { return c.expr }
 
-// 预览：需求 2.2"连续计算未来 5 次"
+// 连续计算未来 N次"
 func (c Cron) NextN(after time.Time, n int) ([]time.Time, error) {
 	out := make([]time.Time, 0, n)
 	t := after

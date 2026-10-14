@@ -16,14 +16,14 @@ type Registry interface {
 	ListByIDs(ctx context.Context, ids []int64) ([]*Execution, error)
 }
 
-// WorkerRepo worker 视角：只能抢票和写终态。
-// ★ 方法面上不存在 PlanRetry / MarkFailedFinal / Reap —— 想越权也调不到
+// ExecutorRepo Executor 视角：只能抢票和写终态。
+// 方法面上不存在 PlanRetry / MarkFailedFinal / Reap —— 想越权也调不到
 type ExecutorRepo interface {
 	// ClaimPending 原子抢票：
 	// 返回 false = 已被别人认领（重复投递幂等，调用方直接 ACK 丢弃）
 	ClaimPending(ctx context.Context, id int64, workerID string, now time.Time) (bool, error)
 	// UpdateTerminal 写终态：实体方法只能 Success/Failed；
-	// ★ SQL 中不出现 next_retry_at 列（物理上杜绝 worker 碰它）
+	// SQL 中不出现 next_retry_at 列（物理上杜绝 Executor 碰它）
 	UpdateTerminal(ctx context.Context, e *Execution) error
 }
 

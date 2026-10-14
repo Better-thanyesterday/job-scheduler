@@ -74,7 +74,7 @@ func (p RetryPolicy) CanRetry(retryCount int) bool {
 }
 
 // NextDelay 第 retryCount 次重试前应等待多久
-// 对应文档 8.2.3：固定间隔 / 指数退避(1→2→4→8min 封顶 30min)。
+// 固定间隔 / 指数退避(1→2→4→8min 封顶 30min)。
 // 指数分支用迭代翻倍而不是移位：retryCount 不受信时 interval<<n 会
 // int64 溢出成负数/极小值，绕过天花板校验；迭代版每步检查封顶，天然防溢出
 func (p RetryPolicy) NextDelay(retryCount int) time.Duration {

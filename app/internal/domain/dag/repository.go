@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// DagRepo 定义态仓储(api 创建/编辑 DAG、引擎按 ID 加载定义)
+// DagRepo 定义态仓储(api 创建/编辑 DAG)
 type DagRepo interface {
 	Create(ctx context.Context, d *Dag) error
 	Update(ctx context.Context, d *Dag) error
@@ -27,7 +27,6 @@ type BrokenRun struct {
 type DagExecutionRepo interface {
 	Create(ctx context.Context, de *DagExecution) error
 	Update(ctx context.Context, de *DagExecution) error
-	// Get 连同全部节点记录一起加载,Rebuild 装配
 	Get(ctx context.Context, id int64) (*DagExecution, error)
 	// ListRunning 扫描运行中的 DAG 运行(引擎轮询推进)。
 	// healthy 可正常推进；broken 是定义被运行期间修改、实体无法重建的运行——

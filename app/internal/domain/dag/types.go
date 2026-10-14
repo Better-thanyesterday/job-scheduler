@@ -106,7 +106,6 @@ func (s DagExecStatus) IsTerminal() bool { return s != DagExecStatusRunning }
 
 var canDagExecTransition = map[DagExecStatus]map[DagExecStatus]bool{
 	DagExecStatusRunning: {DagExecStatusSuccess: true, DagExecStatusFailed: true, DagExecStatusPartial: true},
-	// 终态是黑洞：不可迁出
 }
 
 func (s *DagExecStatus) Transition(to DagExecStatus) error {

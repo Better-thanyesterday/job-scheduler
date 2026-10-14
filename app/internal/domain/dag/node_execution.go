@@ -94,7 +94,7 @@ func (ne *NodeExecution) FinishSuccess(output json.RawMessage, now time.Time) er
 	return nil
 }
 
-// FinishFailed 节点失败。★节点级终态:引擎只在 execution 重试耗尽后才调它,
+// FinishFailed 节点失败。节点级终态:引擎只在 execution 重试耗尽后才调它,
 // 中途失败由 execution 的 planner 自己兜
 func (ne *NodeExecution) FinishFailed(now time.Time) error {
 	if err := ne.status.Transition(DagNodeStatusFailed); err != nil {

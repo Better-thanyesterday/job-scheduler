@@ -25,7 +25,7 @@ type Execution struct {
 	workerID   string
 	traceID    string
 
-	nextRetryAt *time.Time // ★ planner 专属字段；worker 的方法根本不碰它
+	nextRetryAt *time.Time //  planner 专属字段；worker 的方法根本不碰它
 	createdAt   time.Time
 }
 
@@ -111,7 +111,7 @@ func (e *Execution) FinishSuccess(result []byte, now time.Time) error {
 	return nil
 }
 
-// FinishFailed 执行失败。★注意：不设置 next_retry_at——那是 planner 的管辖字段，
+// FinishFailed 执行失败。注意：不设置 next_retry_at——那是 planner 的管辖字段，
 // worker 只负责如实报告"我失败了"
 func (e *Execution) FinishFailed(errMsg string, now time.Time) error {
 	if err := e.status.Transition(StatusFailed); err != nil {

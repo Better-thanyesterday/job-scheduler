@@ -6,14 +6,11 @@ import (
 	"time"
 )
 
-// ExecutionMessage 跨进程执行消息。
-//
-// 纪律：
+// ExecutionMessage 执行消息推送给执行器。
 //  1. 字段只增、不删、不改义；新增字段必须 omitempty（消费端容忍式反序列化）
 //  2. config 是执行时刻的配置快照——worker 不回查 tasks 表，
 //     任务被禁用/删除后，已入队执行按快照跑完
-//  3. 不携带 retry_count / max_retry / retry_policy——重试是 scheduler/retry
-//     的职责，消息不承载重试语义（§7.3）
+//  3. 不携带重试策略，重试是 调度器的职责，消息不承载重试语义
 type ExecutionMessage struct {
 	ExecID     int64           `json:"execution_id"`
 	TaskID     int64           `json:"task_id"`
@@ -52,7 +49,7 @@ func (m *ExecutionMessage) Validate() error {
 	return nil
 }
 
-// Body 序列化为 JSON
+// 序列化为 JSON
 func (m *ExecutionMessage) Body() ([]byte, error) {
 	return json.Marshal(m)
 }
@@ -64,13 +61,13 @@ const (
 	FailureClassExecution = "execution" // 执行本身的失败
 )
 
-// ExecutionResult 执行结果回执（executor → 下游消费者，经 RabbitMQ）。
-// 队列按来源分 dag / cron 两族，再按成功 / 超时失败 / 执行失败分流（路由键见 infra/mq）。
+// ExecutionResult 执行结果回执（executor → 下游消费者，经RabbitMQ）。
+// 队列按来源分 dag / cron 两族，再按成功 / 超时失败 / 执行失败分流。
 // 纪律与 ExecutionMessage 相同：字段只增、不删、不改义，新增字段必须 omitempty。
-// ★ best-effort：结果通知失败不影响执行本身，消费端不应假设恰达一次；
-// ★ failed 回执是"单次失败"而非"重试耗尽终局"——重试归 planner 管，
-//
-//	消费方按 execution_id 自行聚合，且不得拿它直接驱动任何终态判定
+// best-effort：结果通知失败不影响执行本身，消费端不应假设恰达一次；
+// failed 回执是"单次失败"而非"重试耗尽终局"——重试归 planner 管，
+
+// 消费方按 execution_id 自行聚合，且不得拿它直接驱动任何终态判定
 type ExecutionResult struct {
 	ExecID       int64     `json:"execution_id"`
 	TaskID       int64     `json:"task_id"`
@@ -86,27 +83,21 @@ type ExecutionResult struct {
 	FinishedAt   time.Time `json:"finished_at"`
 }
 
-// FromDag 结果是否来自 DAG 节点（决定路由到 dag 族还是 cron 族队列）
+// FromDag 结果是否来自 DAG 节点
 func (r *ExecutionResult) FromDag() bool { return r.DagExecID > 0 }
 
-// Body 序列化为 JSON
+// 序列化为 JSON
 func (r *ExecutionResult) Body() ([]byte, error) {
 	return json.Marshal(r)
 }
 
 // TaskPusher 执行投递的唯一出口。
-// 谁实现：infra/mq/pusher.go（RabbitMQ，producer confirm 模式）
+// 谁实现：infra/mq/pusher.go
 // 谁消费：api/logic（手动触发）、scheduler/engine（Cron 触发）、scheduler/retry（重试投递）
-// 路由语义（实现方按 Priority 分流，调用方不感知队列名）：
-//
-//	priority ≤ 3 → job.queue.high
-//	priority 4-7 → job.queue.normal
-//	priority ≥ 8 → job.queue.low
+
 type TaskPusher interface {
 	// Push 投递一条执行消息。
 	//   - 实现方必须先 Validate，非法消息返回 ErrInvalidMessage
-	//   - 必须开启 producer confirm：confirm 未收到或 broker NACK 时返回 error，
-	//     保证"返回 nil ≈ 消息已持久化到队列"（文档②§一致性：任务不丢失）
 	//   - 至少一次投递语义：调用方须保证 ExecID 幂等（消费端 ClaimPending 兜底）
 	Push(ctx context.Context, msg *ExecutionMessage) error
 }

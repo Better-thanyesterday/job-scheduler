@@ -3,7 +3,6 @@ package schedule
 import "errors"
 
 var (
-	// ---------- 构造期（New / Rebuild）----------
 
 	// ErrNotFound 调度配置不存在（repo Get 未命中；api 返回 404 语义）
 	ErrNotFound = errors.New("schedule: not found")

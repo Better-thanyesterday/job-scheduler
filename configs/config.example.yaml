@@ -1,0 +1,113 @@
+# ============================================================
+# job-scheduler 运行配置模板
+# 用法：复制本文件为 configs/config.yaml，再按本机环境填值。
+# 真实 config.yaml 已被 .gitignore 排除——密码/密钥/个人通知渠道
+# （QQ 邮箱、机器人 webhook 等）一律不进仓库。
+# ============================================================
+
+name: "api"
+mode: "dev"
+port: 8888
+version: "v0.0.1"
+start_time: "2026-02-24"       # 雪花算法纪元（不早于它的时间戳即可）
+machine_id: 1                  # 多实例部署时每台必须不同
+
+auth:
+  jwt_expire: 8760             # token 有效期（小时）
+  jwt_secret: "<改成随机长字符串>"  # ★ 必改：泄露即可伪造任意用户 token
+
+# 日志统一写到 logs/<service>.log（service 由各进程自报，见 app/pkg/logger）
+log:
+  level: "debug"               # 生产建议 release 模式 + info
+  max_size: 200                # 单文件 MB
+  max_age: 30                  # 保留天数
+  max_backups: 7
+
+# 多数据库配置（按业务域分库；跨库只存 ID 不做外键）
+mysqls:
+  task:
+    host: "127.0.0.1"
+    port: 3306
+    user: "root"
+    password: "<数据库密码>"
+    dbname: "job_task"
+    max_open_conns: 200
+    max_idle_conns: 50
+
+  schedule:
+    host: "127.0.0.1"
+    port: 3306
+    user: "root"
+    password: "<数据库密码>"
+    dbname: "job_schedule"
+    max_open_conns: 200
+    max_idle_conns: 50
+
+  execution:
+    host: "127.0.0.1"
+    port: 3306
+    user: "root"
+    password: "<数据库密码>"
+    dbname: "job_execution"
+    max_open_conns: 200
+    max_idle_conns: 50
+
+  dag:
+    host: "127.0.0.1"
+    port: 3306
+    user: "root"
+    password: "<数据库密码>"
+    dbname: "job_dag"
+    max_open_conns: 200
+    max_idle_conns: 50
+
+  system:
+    host: "127.0.0.1"
+    port: 3306
+    user: "root"
+    password: "<数据库密码>"
+    dbname: "job_system"
+    max_open_conns: 200
+    max_idle_conns: 50
+
+# RabbitMQ（消息任务的业务载荷投递 + best-effort 结果回执；
+# 执行消息走 gRPC 推送，MQ 不可用只降级这两项，服务照常起）
+mq:
+  host: "127.0.0.1"
+  port: 5672
+  user: "guest"
+  password: "guest"
+  vhost: "/"
+  confirm_mode: false
+  prefetch_count: 10
+
+# etcd（executor 注册/发现 + scheduler 选主）
+etcd:
+  endpoints:
+    - "127.0.0.1:2379"
+
+# executor 的 gRPC 推送服务与状态上报
+executor:
+  listen: ":9901"            # gRPC 监听地址
+  advertise: ""              # 上报给 etcd 的可达地址；空则用 127.0.0.1:9901（跨机部署必配）
+  lease_ttl: 15              # etcd 注册租约秒数：崩溃后最迟这么久从成员表消失
+  metrics_port: 9902         # executor /metrics 端口
+  max_concurrency: 10
+  version: "v0.0.1"
+
+  # 结果溢出存储（三段式）：成功结果超过 result_inline_max_bytes 时全量 gzip 直传 MinIO，
+  # executions.result 落"引用+预览"信封；对象按 executions/ 前缀 30 天自动过期，
+  # 孤儿对象由 GC 兜底。不配 minio 段 = 不启用溢出，维持 4KB 截断内联
+  result_inline_max_bytes: 32768
+  minio:
+    endpoint: "127.0.0.1:9000"
+    access_key: "minioadmin"
+    secret_key: "<MinIO 密钥>"
+    bucket: "job-results"
+    use_ssl: false
+
+# scheduler 的 /metrics 端口
+metrics_port: 9100
+
+# executor 的 worker 标识（认领执行时写入 worker_id）
+worker_id: "worker-1"

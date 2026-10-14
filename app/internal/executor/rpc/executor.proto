@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+// executor.v1 执行器的推送契约：scheduler 通过 etcd 发现 executor 后，
+// 直接 RPC 推送任务，替代原 RabbitMQ 拉模式（消息从"排队等消费"变为
+// "点对点投递"，至少一次语义由调用方重试 + 消费端 ClaimPending 幂等兜底）。
+package executor.v1;
+
+option go_package = "job-scheduler/app/internal/executor/rpc/v1;executorv1";
+
+// ExecuteRequest 携带一条执行消息。
+//
+// payload 是 domain/coordination.ExecutionMessage 的 JSON 序列化，不把字段
+// 复制进 proto：ExecutionMessage 是领域层 L3 契约（字段只增不删、消费端
+// 容忍式反序列化），proto 里再抄一份会变成两份事实，漂移后难以察觉。
+message ExecuteRequest {
+  bytes payload = 1;
+}
+
+// ExecuteResponse 单次推送的结果。
+//
+// error_code 约定：
+//   0 = OK              送达且按响应字段解读
+//   1 = CLAIMED_FALSE   重复投递（已被其他调用认领或状态非法），无需重试
+//   2 = EXEC_FAILED     认领成功但执行失败，终态已落库，重试由 planner 接管
+//   3 = INVALID_MESSAGE 消息未过 Validate，重试也不会成功
+message ExecuteResponse {
+  bool claimed = 1;     // 是否成功认领（false = 幂等丢弃重复投递）
+  bool success = 2;     // 执行终态是否成功（仅 claimed=true 时有意义）
+  string error_msg = 3; // 失败摘要（已截断，与 executions.error_msg 同源）
+  int32 error_code = 4;
+}
+
+enum ErrorCode {
+  OK = 0;
+  CLAIMED_FALSE = 1;
+  EXEC_FAILED = 2;
+  INVALID_MESSAGE = 3;
+}
+
+// ExecutorService 执行器 gRPC 服务。
+service ExecutorService {
+  // Execute 推送一条执行消息。
+  //
+  //   - 返回 Unavailable：executor 侧基础设施抖动（DB 写不进等），调用方
+  //     换实例重试——执行可能已被认领，重试依赖 ClaimPending 幂等
+  //   - 返回 InvalidArgument：payload 反序列化/校验失败，重试无意义
+  //   - 返回 OK：送达，具体结果看 ExecuteResponse 字段
+  //
+  // 任务执行脱离 RPC 生命周期：认领成功后即使调用方断开，executor 也会
+  // 把任务跑完并写终态（ctx 与 RPC 解耦，见 server 实现）。
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}

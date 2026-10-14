@@ -1,0 +1,61 @@
+{
+  "dashboard": {
+    "uid": "job-scheduler",
+    "title": "job-scheduler 总览",
+    "tags": ["job-scheduler"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1, "type": "stat", "title": "调度引擎存活",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+        "targets": [{ "expr": "scheduler_engine_up", "refId": "A" }],
+        "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "运行中", "color": "green" }, "0": { "text": "停摆", "color": "red" } } }] } }
+      },
+      {
+        "id": 2, "type": "stat", "title": "存活 Executor 数",
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+        "targets": [{ "expr": "max(executor_up)", "refId": "A" }],
+        "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "在线", "color": "green" }, "0": { "text": "离线", "color": "red" } } }] } }
+      },
+      {
+        "id": 3, "type": "stat", "title": "待重试积压",
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+        "targets": [{ "expr": "scheduler_retry_pending", "refId": "A" }],
+        "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 50 } ] } } }
+      },
+      {
+        "id": 4, "type": "stat", "title": "调度触发滞后 P99 (s)",
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+        "targets": [{ "expr": "histogram_quantile(0.99, sum(rate(scheduler_trigger_lag_seconds_bucket[5m])) by (le))", "refId": "A" }]
+      },
+      {
+        "id": 5, "type": "timeseries", "title": "调度触发速率 (按任务)",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "targets": [{ "expr": "sum by (task_id) (rate(scheduler_task_triggered_total[5m]))", "refId": "A", "legendFormat": "task {{task_id}}" }]
+      },
+      {
+        "id": 6, "type": "timeseries", "title": "执行终态速率 (success/failed/timeout)",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "targets": [{ "expr": "sum by (status) (rate(scheduler_task_executed_total[5m]))", "refId": "A", "legendFormat": "{{status}}" }]
+      },
+      {
+        "id": 7, "type": "timeseries", "title": "Executor 在跑的任务数",
+        "gridPos": { "h": 7, "w": 12, "x": 0, "y": 12 },
+        "targets": [{ "expr": "executor_running_tasks", "refId": "A" }]
+      },
+      {
+        "id": 8, "type": "timeseries", "title": "执行耗时 P50/P99 (s)",
+        "gridPos": { "h": 7, "w": 12, "x": 12, "y": 12 },
+        "targets": [
+          { "expr": "histogram_quantile(0.5, sum(rate(scheduler_task_duration_seconds_bucket[5m])) by (le))", "refId": "A", "legendFormat": "P50" },
+          { "expr": "histogram_quantile(0.99, sum(rate(scheduler_task_duration_seconds_bucket[5m])) by (le))", "refId": "B", "legendFormat": "P99" }
+        ]
+      }
+    ],
+    "schemaVersion": 39,
+    "version": 1
+  },
+  "overwrite": true
+}

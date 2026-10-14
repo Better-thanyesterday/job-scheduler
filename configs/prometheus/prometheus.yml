@@ -1,0 +1,28 @@
+# Prometheus 抓取与告警配置（job-scheduler）
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# 告警推给本机 Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:9093"]
+
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # scheduler 引擎指标（engine_up / task_triggered / retry_pending ...）
+  - job_name: "scheduler"
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+
+  # executor 执行器指标（executor_up / running_tasks / grpc_execution ...）
+  - job_name: "executor"
+    static_configs:
+      - targets: ["127.0.0.1:9902"]

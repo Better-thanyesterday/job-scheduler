@@ -1,0 +1,29 @@
+# Go编译产物
+bin/
+*.exe
+*.out
+
+# IDE编辑器文件
+.idea/
+.vscode/
+
+# 本地数据库、日志文件
+*.db
+logs/
+
+# etcd 裸启动时在当前目录生成的默认数据目录
+default.etcd/
+
+# 性能剖析产物
+profiles/
+*.prof
+
+# 环境变量文件（里面存密钥）
+.env
+
+#脚本
+scripts/
+
+# 真实环境配置（含密钥/密码/个人通知渠道）：只提交 *.example 模板
+configs/config.yaml
+configs/alertmanager/alertmanager.yml

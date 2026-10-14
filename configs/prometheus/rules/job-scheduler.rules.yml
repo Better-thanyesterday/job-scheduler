@@ -1,0 +1,59 @@
+# job-scheduler 告警规则
+groups:
+  - name: job-scheduler-availability
+    rules:
+      # 看门狗：用于验证 Prometheus→Alertmanager 链路，恒触发。
+      # 链路验证通过后可删除本条。
+      - alert: DeadMansSwitch
+        expr: vector(1)
+        labels:
+          severity: none
+          environment: dev
+        annotations:
+          summary: "链路验证告警（恒触发，验证后删除）"
+
+      # 调度引擎停摆：engine_up 掉零是 P0 事故
+      # （executor 也导入 pkg/metrics 会暴露同名指标且恒为 0，必须按 job 收窄）
+      - alert: SchedulerEngineDown
+        expr: scheduler_engine_up{job="scheduler"} == 0 or absent(scheduler_engine_up{job="scheduler"})
+        for: 1m
+        labels:
+          severity: critical
+          environment: dev
+        annotations:
+          summary: "scheduler 引擎停摆"
+          description: "scheduler_engine_up 已持续 1 分钟为 0（或无数据），调度已停止触发。"
+
+      # executor 全体下线
+      - alert: ExecutorDown
+        expr: max(executor_up) == 0 or absent(executor_up)
+        for: 1m
+        labels:
+          severity: critical
+          environment: dev
+        annotations:
+          summary: "executor 全体下线"
+          description: "没有任何存活的 executor，任务投递后将无人消费。"
+
+  - name: job-scheduler-business
+    rules:
+      # 待重试积压：planner 扫出的可重试执行持续偏高
+      - alert: HighRetryBacklog
+        expr: scheduler_retry_pending > 50
+        for: 5m
+        labels:
+          severity: warning
+          environment: dev
+        annotations:
+          summary: "重试积压偏高（{{ $value }} 条）"
+          description: "超过 5 分钟重试积压大于 50，可能是下游持续故障或退避配置过激进。"
+
+      # 调度心跳停滞：引擎心跳时间戳超过 60s 未更新
+      - alert: SchedulerHeartbeatStale
+        expr: time() - scheduler_engine_heartbeat_timestamp_seconds{job="scheduler"} > 60
+        for: 1m
+        labels:
+          severity: critical
+          environment: dev
+        annotations:
+          summary: "scheduler 心跳停滞超过 60s"

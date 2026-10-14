@@ -1,0 +1,38 @@
+# Alertmanager 配置模板：邮件 + 告警路由
+#
+# ★ 邮件配置三步（以 QQ 邮箱为例）：
+#   1. QQ 邮箱网页版 → 设置 → 账号 → 开启 SMTP 服务
+#   2. 按提示获取「授权码」（16 位字母，不是 QQ 密码！）
+#   3. 复制本文件为 alertmanager.yml，把下面的
+#      smtp_auth_password / smtp_from / smtp_auth_username / to 换成你自己的
+#   163 邮箱同理：smtp.163.com:465，其余一致。Gmail 用 smtp.gmail.com:587 + 应用专用密码。
+#
+# ★ 真实 alertmanager.yml 含邮箱/授权码等个人信息，已被 .gitignore 排除，勿提交。
+# 改完配置重启 alertmanager.exe 生效（或启动时加 --web.enable-lifecycle 后 curl -X POST http://127.0.0.1:9093/-/reload）
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: "smtp.qq.com:465"
+  smtp_from: "your-mail@qq.com"
+  smtp_auth_username: "your-mail@qq.com"
+  smtp_auth_password: "<SMTP 授权码>"
+  smtp_require_tls: false               # 465 端口是隐式 TLS，必须关掉 STARTTLS
+
+route:
+  group_by: ["alertname", "environment"]
+  group_wait: 30s
+  group_interval: 1m
+  repeat_interval: 1h
+  receiver: "mail"       # 默认全部发邮件
+
+receivers:
+  - name: "mail"
+    email_configs:
+      - to: "your-mail@qq.com"          # 收件邮箱
+        send_resolved: true            # 恢复时也发一封
+
+# 同名告警：critical 触发期间抑制 warning
+inhibit_rules:
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [alertname]

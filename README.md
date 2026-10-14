@@ -1,12 +1,12 @@
 # job-scheduler
 
-> 分布式任务调度平台 —— 基于 Go 的 Cron 任务调度、执行与编排系统（类 XXL-JOB，从零自研）
+> 分布式任务调度平台 —— 基于 Go 的 Cron 任务调度、执行与编排系统
 
 ![status](https://img.shields.io/badge/status-WIP开发中-orange)
 ![go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
 ![license](https://img.shields.io/badge/license-TBD-lightgrey)
 
-> ⚠️ **本项目仍在积极开发中，尚未发布稳定版。** 核心链路（Cron 调度 → 执行 → 重试 → DAG 编排 → 监控告警）已联调跑通，但 API 契约与表结构仍可能变更，不建议直接用于生产。见 [Roadmap](#roadmap) 与 [已知限制](#已知限制)。
+> ⚠️ **本项目仍在积极开发中，尚未发布稳定版。** 核心链路（Cron 调度 → 执行 → 重试 → DAG 编排 → 监控告警）已联调跑通，但 API 契约与表结构仍可能变更。见 [Roadmap](#roadmap) 与 [已知限制](#已知限制)。
 
 ---
 
@@ -14,7 +14,7 @@
 
 job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平台，解决三件事：
 
-- **定时触发**：秒级 Cron 解析器（自研，5/6 字段表达式），时间轮驱动调度引擎（5s 周期全量校准，配置变更自动生效）；多活跃节点按 HRW 一致性哈希分片触发权，成员变动自动再均衡；误期执行按补偿策略（补发/跳过/合并）处理；
+- **定时触发**：秒级 Cron 解析器（5/6 字段表达式），时间轮驱动调度引擎（5s 周期全量校准，配置变更自动生效）；多活跃节点按 HRW 一致性哈希分片触发权，成员变动自动再均衡；误期执行按补偿策略（补发/跳过/合并）处理；
 - **可靠执行**：调度结果经 gRPC 直推 executor（etcd 成员表服务发现），executor 原子抢票认领（天然防重复消费），失败按策略（固定间隔/指数退避，封顶 30min）自动重试，僵尸重试独立重推，卡死执行由 reaper 收割，手动触发与调度触发共用同一投递通道；
 - **编排与观测**：DAG 工作流（YAML 导入、运行触发、依赖派发、失败阻断、结果回执唤醒、全生命周期管理），大结果三段式存储（内联/MinIO 溢出/预签名下载），Prometheus 指标 + Grafana 看板 + Alertmanager 邮件告警。
 
@@ -24,7 +24,7 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 
 | 模块 | 能力 |
 |---|---|
-| 用户 | 注册 / 登录（JWT 鉴权，密钥与有效期来自配置）、账号状态校验、撞名自动重试 |
+| 用户 | 注册 / 登录（JWT 鉴权）、账号状态校验、撞名自动重试 |
 | 任务 | CRUD、四种执行类型（HTTP / 脚本 / SQL / 消息）、领域级参数校验、按创建者的重名校验、**手动触发** |
 | 调度 | Cron 表达式（5/6 字段，秒级）、暂停/恢复、misfire 补偿策略（补发/跳过/合并，运行期与补偿期一致生效）、5s 全量校准 |
 | 执行 | gRPC 推送 + etcd 注册发现、原子抢票、失败重试（指数退避封顶 30min）、僵尸重试重推、超时收割、手动触发、结果回执 |
@@ -42,44 +42,45 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 ## 架构
 
 ```mermaid
-flowchart LR
-    user([用户 / 调用方]) -->|HTTP + JWT| api
-
-    subgraph api["api · :8888（鉴权 / 限流 / :9101 metrics）"]
-        A[REST：任务 / 调度 / 执行 / DAG<br>手动触发经 etcd 发现直推]
+flowchart TB
+    subgraph L1["接 入 层"]
+        direction LR
+        API["api :8888 · Gin · JWT · 限流"] ~~~ APIM["metrics :9101"]
     end
 
-    subgraph sched["scheduler · ×N 多活跃分片 · :9100/metrics"]
-        TW["时间轮调度引擎<br>HRW 分片过滤 + 误期补偿"]
-        RP["重试规划器 / reaper / repusher"]
+    subgraph L2["调 度 域 — 多活跃分片"]
+        direction LR
+        TW["时间轮引擎"] ~~~ HRW["HRW 分片"] ~~~ COMP["误期补偿"] ~~~ PLN["重试规划"] ~~~ REA["reaper"] ~~~ REP["repusher"]
     end
 
-    subgraph exec["executor · ×N · :9901 gRPC / :9902 metrics"]
-        E["HTTP / 脚本 / SQL / 消息执行器<br>抢票幂等 · 超时杀进程树"]
+    subgraph L3["执 行 域"]
+        direction LR
+        GRPC["gRPC :9901"] ~~~ E1["HTTP"] ~~~ E2["脚本"] ~~~ E3["SQL"] ~~~ E4["消息"] ~~~ SPM["溢出→MinIO"] ~~~ EXM["metrics :9902"]
     end
 
-    subgraph dagg["dag 引擎（无端口，MQ 结果唤醒 + tick 兜底）"]
-        DG["依赖派发 / 失败阻断 / 级联跳过"]
+    subgraph L4["编 排 域"]
+        direction LR
+        DAGE["dag 引擎：依赖派发 · 失败阻断"] ~~~ WAKE["结果唤醒消费"]
     end
 
-    DB[("MySQL · 按业务域分库<br>job_task / job_schedule / job_execution<br>job_dag / job_system")]
-    ETCD[("etcd<br>成员注册 / HRW 分片 / 分布式锁")]
-    MQ[["RabbitMQ<br>消息任务载荷 / DAG 结果唤醒"]]
-    MINIO[("MinIO<br>溢出结果对象 · 30 天过期")]
-    PROM[/Prometheus :9090/] --> AM[/Alertmanager/] --> MAIL[邮件告警]
-    GRAF[/Grafana :3000/] -.读.- PROM
+    subgraph L5["中 间 件"]
+        direction LR
+        ETCD["etcd 注册·分片·锁"] ~~~ MQB["RabbitMQ 载荷·回执"] ~~~ MINIOB["MinIO 溢出存储"]
+    end
 
-    api --> DB
-    A -- 手动触发：登记 + gRPC 直推 --> E
-    TW -- 登记执行 + gRPC 直推 --> E
-    RP -- 重投 / 补推 --> E
-    TW & RP & E & DG --- DB
-    sched & exec -. 注册 / 锁 .-> ETCD
-    A -. 手动触发发现 .-> ETCD
-    E -- 大结果 gzip 直传 --> MINIO
-    E -. 溢出信封回源 .-> MINIO
-    E -- DAG 结果回执 --> MQ
-    MQ -- 唤醒 / 消息载荷 --> DG & E
+    subgraph L6["存 储 层 — 按业务域分库"]
+        direction LR
+        DB1["job_task"] ~~~ DB2["job_schedule"] ~~~ DB3["job_execution"] ~~~ DB4["job_dag"] ~~~ DB5["job_system"]
+    end
+
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+    L1 --> L5
+    L2 --> L5
+    L3 --> L5
+    L4 --> L5
+    L5 --> L6
 ```
 
 **服务清单**
@@ -187,7 +188,7 @@ curl -X POST http://127.0.0.1:8888/api/v1/login \
 ## 测试
 
 ```bash
-go test ./app/...                  # 单元 + 功能测试（17 包全绿）
+go test ./app/...                  # 单元 + 功能测试
 go test -race ./app/internal/...   # 竞态检测
 ```
 
@@ -212,7 +213,7 @@ go test -race ./app/internal/...   # 竞态检测
 
 ## 已知限制
 
-- DAG 前端视图缺失（API 已全部就绪，暂用 curl / HTTP 客户端操作）；
+- 前端视图正在开发（API 已全部就绪，暂用 curl / HTTP 客户端操作）；
 - 配置为启动时读取：JWT 密钥、分库连接等改动需**重启对应进程**生效（viper 热加载仅刷新配置快照，组件不会自动重连/重读）；
 - 限流为进程内令牌桶：多实例部署时集群总限流 = 实例数 × 阈值，跨实例全局限流需接入网关或集中式存储；
 - 时间轮已投递的触发点不可取消，过期触发依赖 5s 全量校准与触发时的新鲜度校验丢弃（设计内行为，暂停/删除后最多一次冗余触发）；

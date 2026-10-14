@@ -27,3 +27,6 @@ scripts/
 # 真实环境配置（含密钥/密码/个人通知渠道）：只提交 *.example 模板
 configs/config.yaml
 configs/alertmanager/alertmanager.yml
+
+# 散落的日志文件（logs/ 目录之外的）
+*.log

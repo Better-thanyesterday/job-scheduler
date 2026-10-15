@@ -26,11 +26,11 @@ const (
 // trigger 执行一次触发，planned 是理论触发点（堆里的 nextRun），
 // 与实际执行时刻的差值即调度偏差（lag_ms 落 history）
 func (e *Engine) trigger(ctx context.Context, s *schedule.Schedule, planned time.Time) error {
-	// 分片过滤：非属主跳过（compensator 路径也经此统一收口）
+	// 分片过滤：非属主跳过
 	if e.owns != nil && !e.owns(s.ID()) {
 		return errSkipTrigger
 	}
-	// 抢锁（非阻塞）。锁服务不可用时 fail-open 无锁继续：
+	// 抢锁。锁服务不可用时 fail-open 无锁继续：
 	// nextRun CAS 推进才是互斥的事实源，锁只是减少无效竞争的优化
 	var lock *coordination.LockHandle
 	err := func() error {

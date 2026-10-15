@@ -82,7 +82,6 @@ func NewMultiTimeWheel() *MultiTimeWheel {
 	return m
 }
 
-// ---------- 注册 ----------
 
 // Schedule 在绝对时刻 at 触发 cb。at 已过期也能插：下个刻度立即触发
 func (m *MultiTimeWheel) Schedule(scheduleID, taskID int64, at time.Time, cb func()) error {

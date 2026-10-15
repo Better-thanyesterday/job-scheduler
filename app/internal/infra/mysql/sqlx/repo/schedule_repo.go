@@ -91,15 +91,15 @@ func (s *ScheduleRepo) ListActive(ctx context.Context) ([]*schedule.Schedule, er
 // UpdateNextRun 乐观锁推进：WHERE next_run_time = 实体装载值（NextRunAnchor）。
 // 语义是"认领当前这个触发点"——engine 触发（Advance）与 api 恢复（Resume）共用同一写入口，
 // 任何一方抢先推进后，另一方拿旧锚点 CAS 必然 0 行 → ErrConflict，调用方放弃本次、下轮重读。
-// 装载时 next_run 为空（从未初始化触发点）的行锚 IS NULL，同样可 CAS。
+// 装载时 next_run 为空的行锚 IS NULL，同样可 CAS。
 // 只更新实体管辖的列，不整行覆盖，避免把堆里陈旧的 name/cron 写回去
 func (s *ScheduleRepo) UpdateNextRun(ctx context.Context, sched *schedule.Schedule) error {
 	anchor := sched.NextRunAnchor()
 	anchorCond := "next_run_time IS NULL"
-	// ★ 只写时间列，不写 status：状态迁移归 SetStatus 专管（带 from→to CAS）。
-	//   混写会用调用方的陈旧内存状态覆盖 DB——compensator 持有的是装载时快照，
-	//   触发间隙里 api 的 Pause 会被静默改回 Running（真实事故路径）。
-	// ★ args 顺序必须与占位符出现顺序一致：SET(updated_at[, next][, last])
+	// 只写时间列，不写 status：状态迁移归 SetStatus 专管（带 from→to CAS）。
+	// 混写会用调用方的陈旧内存状态覆盖 DB——compensator 持有的是装载时快照，
+	// 触发间隙里 api 的 Pause 会被静默改回 Running（真实事故路径）。
+	// args 顺序必须与占位符出现顺序一致：SET(updated_at[, next][, last])
 	//   → WHERE(id[, anchor])
 	args := []interface{}{time.Now()}
 	sets := "updated_at = ?"

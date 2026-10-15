@@ -13,9 +13,8 @@ import (
 	"job-scheduler/app/pkg/metrics"
 )
 
-// refreshInterval 触发点全量校准周期：wheel 不支持取消，调度的
-// 创建/启停/删除/推进全靠本周期对账（正常推进的下一跳由 trigger 成功后
-// 立即下发，不等校准）
+// refreshInterval 触发点全量校准周期：wheel 不支持取消调度的
+// 创建/启停/删除/推进全靠本周期对账（正常推进的下一跳由 trigger 成功后立即下发，不等校准）
 const refreshInterval = 5 * time.Second
 
 type Engine struct {
@@ -27,7 +26,7 @@ type Engine struct {
 	locks        coordination.LockManager
 	consumerN    int // 触发回调的并发上限
 
-	// owns 分片过滤器（多活跃分片模型）：非 nil 时仅属主节点触发该调度。
+	// owns 分片过滤器：非 nil 时仅属主节点触发该调度。
 	// 正确性不依赖它——nextRun 相等校验 + nextRun CAS + 抢票幂等兜底重叠窗口；
 	// 分片只是消除多实例间的无效竞争与重复装载
 	owns func(scheduleID int64) bool
@@ -55,7 +54,7 @@ func NewEngine(scheduleRepo schedule.Repository, execReg execution.Registry,
 }
 
 // Run 阻塞运行：轮子推进 + 触发消费 + 周期校准。调用方放独立 goroutine。
-// engine_up / engine_heartbeat 是 P0「调度停摆」告警的数据源：
+// engine_up / engine_heartbeat 是 调度停摆告警的数据源：
 // 校准成功才刷心跳——循环活着但 DB 持续失败时心跳冻结，告警如期触发
 // SetShardFilter 注入分片过滤器（多活跃部署时由 cmd 层用成员表 HRW 构造）。
 // nil = 不分片（单实例模式，全量触发）

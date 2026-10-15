@@ -51,7 +51,7 @@ func (s *Server) Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResp
 		return nil, status.Errorf(codes.InvalidArgument, "invalid execution message: %v", err)
 	}
 
-	// ★ 执行脱离 RPC 生命周期：一旦认领，即使调用方断开/超时，任务也要
+	// 执行脱离 RPC 生命周期：一旦认领，即使调用方断开/超时，任务也要
 	// 跑完写终态（否则行卡 Running 等 reaper 收割）。故用独立 Background
 	// ctx，预算 = 执行超时 + DB 宽限；handler 内部还会按 timeout_sec 再掐一层
 	execCtx, cancel := context.WithTimeout(context.Background(),

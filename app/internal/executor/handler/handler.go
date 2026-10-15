@@ -248,24 +248,59 @@ func (h *Handler) finish(ctx context.Context, e *execution.Execution) error {
 	return h.claim.UpdateTerminal(ctx, e)
 }
 
-// resolveInputs 就地回源 NodeInputs 里的溢出信封。非信封原样保留；
+// resolveInputs 就地规整 NodeInputs：
+//  1. 溢出信封 → 回源对象存储取全量结果（executor↔MinIO 直连，调度器不扛载荷）；
+//  2. execResult 包装（{"ok":true,"detail":{...}}）→ 抽 detail.output 裸输出，
+//     B 的 stdin 拿到的是上游真实产出而非包装 JSON；
+//  3. 非包装形态原样保留。
 // 检测到信封但未启用结果存储（配置漂移）视为执行失败——
 // 拿元数据跑出错误结果比跑失败更糟
 func (h *Handler) resolveInputs(ctx context.Context, msg *coordination.ExecutionMessage) error {
 	for nodeID, raw := range msg.NodeInputs {
-		if _, ok := resultstore.ParseEnvelope(raw); !ok {
-			continue
+		if env, ok := resultstore.ParseEnvelope(raw); ok {
+			if h.spill == nil {
+				return fmt.Errorf("node %q: 上游输出是溢出信封，但本 executor 未启用结果存储（检查 executor.minio 配置）", nodeID)
+			}
+			full, err := h.spill.Load(ctx, raw)
+			if err != nil {
+				return fmt.Errorf("node %q: 回源 %s: %w", nodeID, env.Key, err)
+			}
+			raw = full
 		}
-		if h.spill == nil {
-			return fmt.Errorf("node %q: 上游输出是溢出信封，但本 executor 未启用结果存储（检查 executor.minio 配置）", nodeID)
-		}
-		full, err := h.spill.Load(ctx, raw)
-		if err != nil {
-			return fmt.Errorf("node %q: %w", nodeID, err)
-		}
-		msg.NodeInputs[nodeID] = json.RawMessage(full)
+		msg.NodeInputs[nodeID] = json.RawMessage(unwrapExecResult(raw))
 	}
 	return nil
+}
+
+// unwrapExecResult 上游执行器的 result 统一是 execResult 包装
+// （{"ok":true,"detail":{...}}），抽取其中的"裸输出"给下游：
+//   - 脚本 → detail.output（stdout 原文）
+//   - HTTP → detail.body（响应体）
+//   - SQL  → detail.rows（结果行 JSON）
+//
+// 都没有（消息任务等）→ 透传整个包装原文。
+// 非 execResult 形态（纯文本/其他 JSON）同样原样透传
+func unwrapExecResult(full []byte) []byte {
+	var probe struct {
+		OK     bool `json:"ok"`
+		Detail struct {
+			Output string          `json:"output"`
+			Body   string          `json:"body"`
+			Rows   json.RawMessage `json:"rows"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(full, &probe); err != nil || !probe.OK {
+		return full
+	}
+	switch {
+	case probe.Detail.Output != "":
+		return []byte(probe.Detail.Output)
+	case probe.Detail.Body != "":
+		return []byte(probe.Detail.Body)
+	case len(probe.Detail.Rows) > 0:
+		return probe.Detail.Rows
+	}
+	return full
 }
 
 func errMsgOf(err error) string {

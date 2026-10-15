@@ -235,3 +235,60 @@ func mustJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
+
+// ---------- 抽取 detail.output（裸输出）语义 ----------
+
+// 信封回源后拿到的是 execResult 包装（A 的溢出全量就是包装 JSON）：
+// B 的 stdin 必须是抽出的 detail.output 裸输出，而非包装 JSON
+func TestHandleEnvelopeUnwrapsToRawOutput(t *testing.T) {
+	claim := &fakeClaim{}
+	storer := &fakeStorer{
+		// A 的溢出全量 = execResult 包装（真实形态）
+		fullBytes: `{"ok":true,"UNWRAP-ENV-MARKER":1,"duration_ms":5,"detail":{"output":"RAW-A-STDOUT","interpreter":"bash"}}`,
+	}
+	h := NewHandler(claim, executor.Registry{2: executor.NewScriptExecutor()}, "worker-test", nil)
+	h.EnableSpill(storer, 32<<10)
+
+	out, err := h.Handle(context.Background(), dagMsg(48, envelopeJSON("executions/47/result.json.gz")))
+	if err != nil || !out.Success {
+		t.Fatalf("执行应成功: %+v err=%v", out, err)
+	}
+	if !strings.Contains(string(claim.terminal.Result()), "RAW-A-STDOUT") ||
+		strings.Contains(string(claim.terminal.Result()), "UNWRAP-ENV-MARKER") {
+		t.Fatalf("stdin 应为解包后的裸输出: %s", claim.terminal.Result())
+	}
+}
+
+// 非信封但为 execResult 包装的输入（既不溢出也非纯文本）：同样解包到裸输出
+func TestHandleUnwrapsWrappedInlineInput(t *testing.T) {
+	claim := &fakeClaim{}
+	h := NewHandler(claim, executor.Registry{2: executor.NewScriptExecutor()}, "worker-test", nil)
+	h.EnableSpill(&failLoadStorer{}, 32<<10)
+
+	wrapped := json.RawMessage(`{"ok":true,"UNWRAP-INLINE-MARKER":1,"duration_ms":9,"detail":{"output":"INLINE-RAW-OUTPUT"}}`)
+	out, err := h.Handle(context.Background(), dagMsg(49, wrapped))
+	if err != nil || !out.Success {
+		t.Fatalf("执行应成功: %+v err=%v", out, err)
+	}
+	if !strings.Contains(string(claim.terminal.Result()), "INLINE-RAW-OUTPUT") ||
+		strings.Contains(string(claim.terminal.Result()), "UNWRAP-INLINE-MARKER") {
+		t.Fatalf("stdin 应为解包后的裸输出: %s", claim.terminal.Result())
+	}
+}
+
+// HTTP 任务无 detail.output，但有 detail.body：同样作为裸输出传递
+func TestHandleUnwrapsHTTPBody(t *testing.T) {
+	claim := &fakeClaim{}
+	h := NewHandler(claim, executor.Registry{2: executor.NewScriptExecutor()}, "worker-test", nil)
+	h.EnableSpill(&failLoadStorer{}, 32<<10)
+
+	httpResult := json.RawMessage(`{"ok":true,"duration_ms":7,"detail":{"status_code":200,"body":"HTTP-BODY-TEXT"}}`)
+	out, err := h.Handle(context.Background(), dagMsg(50, httpResult))
+	if err != nil || !out.Success {
+		t.Fatalf("执行应成功: %+v err=%v", out, err)
+	}
+	if !strings.Contains(string(claim.terminal.Result()), "HTTP-BODY-TEXT") ||
+		strings.Contains(string(claim.terminal.Result()), "status_code") {
+		t.Fatalf("stdin 应为解包后的响应体: %s", claim.terminal.Result())
+	}
+}

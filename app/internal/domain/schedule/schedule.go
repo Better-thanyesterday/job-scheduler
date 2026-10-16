@@ -74,7 +74,9 @@ func (s *Schedule) InitNextRun(now time.Time) error {
 }
 
 // Rebuild 从持久化数据重建（infra convert 唯一入口，与 New 的区别同 task.Rebuild）
-func Rebuild(id, taskID int64, name string, cron task.Cron, typ ScheduleType,
+// Rebuild 从持久化数据重建（infra convert 唯一入口，与 New 的区别同 task.Rebuild）。
+// targetType 由 repo 按列值传入（1-任务 2-DAG），DAG 调度 dagID>0、taskID=0
+func Rebuild(id, taskID, dagID int64, name string, cron task.Cron, typ ScheduleType,
 	nextRun, lastRun time.Time, misfire MisfirePolicy,
 	timezone string, status Status, createdBy int64,
 	createdAt, updatedAt time.Time) (*Schedule, error) {
@@ -85,16 +87,33 @@ func Rebuild(id, taskID int64, name string, cron task.Cron, typ ScheduleType,
 	if !misfire.Valid() {
 		return nil, fmt.Errorf("schedule: rebuild id=%d invalid misfire_policy %d", id, misfire)
 	}
+	var target TargetType
+	switch {
+	case taskID > 0 && dagID == 0:
+		target = TargetTask
+	case dagID > 0 && taskID == 0:
+		target = TargetDAG
+	default:
+		// 历史行/异常行兜底：以非零者为准归位，id 原样保留不伪造——
+		// 把 taskID 改写成调度自身 id 会让触发去执行一个不存在的任务
+		if dagID > 0 {
+			target = TargetDAG
+		} else {
+			target = TargetTask // taskID 可能仍为 0：脏行由触发侧按无任务快照处置
+		}
+	}
 	// 不在这里把"nextRun 已过期"改写为 Expired：持久化状态必须原样回填，
 	//   过期与否是调度侧的动态判定（compensator 按 nextRun 补发），
 	//   读库时改状态会让 api 展示与 engine 装载都失真
-	return &Schedule{id: id, taskID: taskID, name: name, cron: cron, typ: typ,
+	return &Schedule{id: id, taskID: taskID, targetType: target, dagID: dagID, name: name, cron: cron, typ: typ,
 		misfire: misfire, timezone: timezone, nextRun: nextRun, nextRunAnchor: nextRun, lastRun: lastRun,
 		status: status, createdBy: createdBy, createdAt: createdAt, updatedAt: updatedAt}, nil
 }
 
 func (s *Schedule) ID() int64              { return s.id }
 func (s *Schedule) TaskID() int64          { return s.taskID }
+func (s *Schedule) Target() TargetType     { return s.targetType }
+func (s *Schedule) DagID() int64           { return s.dagID }
 func (s *Schedule) Name() string           { return s.name }
 func (s *Schedule) Cron() task.Cron        { return s.cron } // 值对象，天然只读
 func (s *Schedule) Misfire() MisfirePolicy { return s.misfire }

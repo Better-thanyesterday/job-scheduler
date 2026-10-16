@@ -10,6 +10,8 @@ import (
 type Schedule struct {
 	ID            int64        `db:"id" json:"id"`
 	TaskID        int64        `db:"task_id" json:"task_id"`
+	TargetType    int32        `db:"target_type" json:"target_type"`
+	DagID         int64        `db:"dag_id" json:"dag_id"`
 	Name          string       `db:"name" json:"name"`
 	CronExpr      string       `db:"cron_expr" json:"cron_expr"`
 	ScheduleType  int32        `db:"schedule_type" json:"schedule_type"`

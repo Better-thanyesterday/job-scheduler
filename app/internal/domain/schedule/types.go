@@ -58,3 +58,13 @@ const (
 )
 
 func (m MisfirePolicy) Valid() bool { return m >= MisfireFireAll && m <= MisfireMerge }
+
+// TargetType 调度的触发目标：定时跑一个任务，或定时跑一个 DAG
+type TargetType int8
+
+const (
+	TargetTask TargetType = 1 + iota // 定时触发 task_id 指向的任务
+	TargetDAG                        // 定时触发 dag_id 指向的 DAG 运行
+)
+
+func (t TargetType) Valid() bool { return t == TargetTask || t == TargetDAG }

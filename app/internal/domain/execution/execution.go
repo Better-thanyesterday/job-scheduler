@@ -124,6 +124,20 @@ func (e *Execution) FinishFailed(errMsg string, now time.Time) error {
 	return nil
 }
 
+// AttachDAG 补挂 DAG 归属：dag 引擎派发节点时调用。
+// 仅 Pending 可挂——执行一旦被认领/终态，归属再改就是篡改事实
+func (e *Execution) AttachDAG(dagExecID int64, nodeID string) error {
+	if e.status != StatusPending {
+		return fmt.Errorf("execution: attach dag id=%d wrong status %d", e.id, e.status)
+	}
+	if dagExecID <= 0 || nodeID == "" {
+		return fmt.Errorf("execution: attach dag invalid args dag=%d node=%q", dagExecID, nodeID)
+	}
+	e.dagExecID = dagExecID
+	e.dagNodeID = nodeID
+	return nil
+}
+
 // ---------- planner 侧行为（只有 planner 会调）----------
 
 // PlanRetry 规划重试：返回下次重试时间，交给调用方投递。

@@ -43,7 +43,9 @@ func InitializeApp() (*gin.Engine, func(), error) {
 	scheduleDB := dbPools.Schedule
 	scheduleRepo := sqlx.NewScheduleRepo(scheduleDB)
 	taskSourceRepo := sqlx.NewTaskSourceRepo(taskDB)
-	scheduleLogic := logic.NewScheduleLogic(scheduleRepo, taskSourceRepo)
+	dagDB := dbPools.Dag
+	dagRepo := sqlx.NewDagRepo(dagDB)
+	scheduleLogic := logic.NewScheduleLogic(scheduleRepo, taskSourceRepo, dagRepo)
 	scheduleController := controller.NewScheduleController(scheduleLogic)
 	executionDB := dbPools.Execution
 	executionRegistryRepo := sqlx.NewExecutionRegistryRepo(executionDB)
@@ -58,8 +60,6 @@ func InitializeApp() (*gin.Engine, func(), error) {
 	store := resultstore.ProvideStore(appConfig)
 	executionLogic := logic.NewExecutionLogic(taskRepo, executionRegistryRepo, executionQueryRepo, pusher, store)
 	executionController := controller.NewExecutionController(executionLogic)
-	dagDB := dbPools.Dag
-	dagRepo := sqlx.NewDagRepo(dagDB)
 	dagExecutionRepo := sqlx.NewDagExecutionRepo(dagDB)
 	dagLogic := logic.NewDagLogic(dagRepo, dagExecutionRepo)
 	dagController := controller.NewDagController(dagLogic)

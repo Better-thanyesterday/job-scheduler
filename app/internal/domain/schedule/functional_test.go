@@ -16,7 +16,7 @@ func TestScheduleStateMachine(t *testing.T) {
 	}
 	now := time.Date(2026, 9, 27, 10, 0, 0, 0, time.Local) // 周日 10:00
 
-	s, err := schedule.New(1, 100, "daily-930", cron,
+	s, err := schedule.New(1, 100, 0, "daily-930", cron,
 		schedule.TypeCron, schedule.MisfireSkip, "Asia/Shanghai", 42)
 	if err != nil {
 		t.Fatalf("创建调度失败: %v", err)

@@ -34,9 +34,9 @@ func (s *ScheduleRepo) Save(ctx context.Context, sched *schedule.Schedule) error
 	if err != nil {
 		return fmt.Errorf("计划转PO失败：%w", err)
 	}
-	cols := []string{"id", "task_id", "name", "cron_expr", "schedule_type",
+	cols := []string{"id", "task_id", "target_type", "dag_id", "name", "cron_expr", "schedule_type",
 		"status", "misfire_policy", "timezone", "created_by"}
-	args := []interface{}{po.ID, po.TaskID, po.Name, po.CronExpr, po.ScheduleType,
+	args := []interface{}{po.ID, po.TaskID, po.TargetType, po.DagID, po.Name, po.CronExpr, po.ScheduleType,
 		po.Status, po.MisfirePolicy, po.Timezone, po.CreatedBy}
 	if po.NextRunTime.Valid {
 		cols = append(cols, "next_run_time")
@@ -186,6 +186,8 @@ func scheduleToPO(s *schedule.Schedule) (*model.Schedule, error) {
 	return &model.Schedule{
 		ID:            s.ID(),
 		TaskID:        s.TaskID(),
+		TargetType:    int32(s.Target()),
+		DagID:         s.DagID(),
 		Name:          s.Name(),
 		CronExpr:      s.Cron().String(),
 		ScheduleType:  int32(s.Type()),
@@ -209,6 +211,7 @@ func scheduleToEntity(po *model.Schedule) (*schedule.Schedule, error) {
 	return schedule.Rebuild(
 		po.ID,
 		po.TaskID,
+		po.DagID,
 		po.Name,
 		cron,
 		schedule.ScheduleType(po.ScheduleType),

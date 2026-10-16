@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	dagdomain "job-scheduler/app/internal/domain/dag"
 	"go.uber.org/zap"
 	"job-scheduler/app/internal/domain/coordination"
 	"job-scheduler/app/internal/domain/execution"
@@ -21,6 +22,8 @@ type Engine struct {
 	wheel        *MultiTimeWheel
 	scheduleRepo schedule.Repository // ListActive / UpdateNextRun / RecordHistory
 	execReg      execution.Registry  // 登记执行
+	dagRepo      dagdomain.DagRepo          // DAG 目标调度：加载定义
+	dagExecRepo  dagdomain.DagExecutionRepo // DAG 目标调度：落运行记录
 	tasks        schedule.TaskSource // 按 task_id 批量取任务
 	pusher       coordination.TaskPusher
 	locks        coordination.LockManager
@@ -36,6 +39,7 @@ type Engine struct {
 }
 
 func NewEngine(scheduleRepo schedule.Repository, execReg execution.Registry,
+	dagRepo dagdomain.DagRepo, dagExecRepo dagdomain.DagExecutionRepo,
 	tasks schedule.TaskSource, pusher coordination.TaskPusher,
 	locks coordination.LockManager, consumerN int) *Engine {
 	if consumerN <= 0 {
@@ -45,6 +49,8 @@ func NewEngine(scheduleRepo schedule.Repository, execReg execution.Registry,
 		wheel:        NewMultiTimeWheel(),
 		scheduleRepo: scheduleRepo,
 		execReg:      execReg,
+		dagRepo:      dagRepo,
+		dagExecRepo:  dagExecRepo,
 		tasks:        tasks,
 		pusher:       pusher,
 		locks:        locks,

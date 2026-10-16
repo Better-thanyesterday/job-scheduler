@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"job-scheduler/app/internal/api/types"
@@ -16,24 +17,45 @@ import (
 type ScheduleLogic struct {
 	scheduleRepo   *repo.ScheduleRepo
 	taskSourceRepo *repo.TaskSourceRepo
+	dagRepo        *repo.DagRepo // target=DAG 的调度：校验 DAG 存在且启用
 }
 
-func NewScheduleLogic(scheduleRepo *repo.ScheduleRepo, taskSourceRepo *repo.TaskSourceRepo) *ScheduleLogic {
+func NewScheduleLogic(scheduleRepo *repo.ScheduleRepo, taskSourceRepo *repo.TaskSourceRepo,
+	dagRepo *repo.DagRepo) *ScheduleLogic {
 	return &ScheduleLogic{
 		scheduleRepo:   scheduleRepo,
 		taskSourceRepo: taskSourceRepo,
+		dagRepo:        dagRepo,
 	}
 }
 
-// Create 创建调度：校验任务存在 → 构造实体 → Cron 类型算初始 nextRun → 落库
+// Create 创建调度：校验触发目标存在 → 构造实体 → Cron 类型算初始 nextRun → 落库
 func (l *ScheduleLogic) Create(ctx context.Context, in *types.CreateScheduleReq, createdBy int64) (*types.ScheduleResp, error) {
-	// 1. 跨库校验：任务必须存在（软删的任务 Get 查不到）。
-	// 翻译成调度域自己的 ErrTaskNotFound，controller 才能映射到参数错误而不是服务繁忙
-	if _, err := l.taskSourceRepo.Get(ctx, int64(in.TaskID)); err != nil {
-		if errors.Is(err, task.ErrNotFound) {
-			return nil, schedule.ErrTaskNotFound
+	targetType := in.TargetType
+	if targetType == 0 {
+		targetType = 1 // 缺省：定时任务
+	}
+	switch targetType {
+	case 1:
+		// 任务目标：跨库校验任务存在（软删的任务 Get 查不到）。
+		// 翻译成调度域自己的 ErrTaskNotFound，controller 才能映射到参数错误而不是服务繁忙
+		if _, err := l.taskSourceRepo.Get(ctx, int64(in.TaskID)); err != nil {
+			if errors.Is(err, task.ErrNotFound) {
+				return nil, schedule.ErrTaskNotFound
+			}
+			return nil, err
 		}
-		return nil, err
+	case 2:
+		// DAG 目标：校验 DAG 存在且启用
+		d, err := l.dagRepo.Get(ctx, int64(in.DagID))
+		if err != nil {
+			return nil, fmt.Errorf("%w: dag_id=%d", schedule.ErrNotFound, in.DagID)
+		}
+		if !d.Active() {
+			return nil, fmt.Errorf("%w: dag_id=%d 未启用", schedule.ErrNotFound, in.DagID)
+		}
+	default:
+		return nil, fmt.Errorf("target_type 取值 1（任务）或 2（DAG）")
 	}
 	// 2. 默认值收口
 	typ := schedule.ScheduleType(in.ScheduleType)
@@ -57,8 +79,14 @@ func (l *ScheduleLogic) Create(ctx context.Context, in *types.CreateScheduleReq,
 		}
 		cron = c
 	}
-	// 4. 实体（schedule.New 现在带 id 入参，雪花分配）
-	s, err := schedule.New(snowflake.GenID(), int64(in.TaskID), in.Name, cron, typ, misfire, timezone, createdBy)
+	// 4. 实体（按触发目标二选一；schedule.New 现在带 id 入参，雪花分配）
+	var taskID, dagID int64
+	if targetType == 1 {
+		taskID = int64(in.TaskID)
+	} else {
+		dagID = int64(in.DagID)
+	}
+	s, err := schedule.New(snowflake.GenID(), taskID, dagID, in.Name, cron, typ, misfire, timezone, createdBy)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +174,8 @@ func toScheduleResponse(s *schedule.Schedule) *types.ScheduleResp {
 	return &types.ScheduleResp{
 		ID:            s.ID(),
 		TaskID:        s.TaskID(),
+		DagID:         s.DagID(),
+		TargetType:    int(s.Target()),
 		Name:          s.Name(),
 		CronExpr:      s.Cron().String(),
 		ScheduleType:  int(s.Type()),

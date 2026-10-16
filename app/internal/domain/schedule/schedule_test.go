@@ -81,7 +81,7 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := New(tt.id, tt.taskID, tt.sname, tt.cron, tt.typ, tt.misfire, tt.tz, tt.by)
+			s, err := New(tt.id, tt.taskID, 0, tt.sname, tt.cron, tt.typ, tt.misfire, tt.tz, tt.by)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("New() error = nil, want error")
@@ -111,7 +111,7 @@ func TestNew(t *testing.T) {
 func TestInitNextRun(t *testing.T) {
 	now := baseTime() // 2024-01-15 10:30:00
 
-	s, err := New(testID, testTaskID, testName,
+	s, err := New(testID, testTaskID, 0, testName,
 		mustCron(t, "0 * * * *"), // 每小时整点
 		validType, validMisfire, testTimezone, testCreated)
 	if err != nil {
@@ -154,7 +154,7 @@ func TestRebuild(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := Rebuild(testID, testTaskID, testName,
+			s, err := Rebuild(testID, testTaskID, 0, testName,
 				mustCron(t, "0 9 * * *"), validType,
 				next, last, tt.misfire,
 				testTimezone, tt.status, testCreated,
@@ -193,7 +193,7 @@ func TestRebuild(t *testing.T) {
 
 func TestPause(t *testing.T) {
 	// Running -> Paused 成功
-	s, _ := New(testID, testTaskID, testName,
+	s, _ := New(testID, testTaskID, 0, testName,
 		mustCron(t, "0 * * * *"), validType, validMisfire, testTimezone, testCreated)
 	if err := s.Pause(); err != nil {
 		t.Fatalf("Pause() on running: %v", err)
@@ -208,7 +208,7 @@ func TestPause(t *testing.T) {
 	}
 
 	// 非 Running 状态应报错
-	s2, _ := Rebuild(testID, testTaskID, testName,
+	s2, _ := Rebuild(testID, testTaskID, 0, testName,
 		mustCron(t, "0 * * * *"), validType,
 		time.Time{}, time.Time{}, validMisfire,
 		testTimezone, StatusPaused, testCreated,
@@ -223,7 +223,7 @@ func TestPause(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDelete(t *testing.T) {
-	s, _ := New(testID, testTaskID, testName,
+	s, _ := New(testID, testTaskID, 0, testName,
 		mustCron(t, "0 * * * *"), validType, validMisfire, testTimezone, testCreated)
 	if err := s.Delete(); err != nil {
 		t.Fatalf("Delete() error = %v", err)
@@ -260,7 +260,7 @@ func TestResume(t *testing.T) {
 	}
 
 	// 非 Paused 状态应报错
-	s2, _ := New(testID, testTaskID, testName,
+	s2, _ := New(testID, testTaskID, 0, testName,
 		mustCron(t, "0 * * * *"), validType, validMisfire, testTimezone, testCreated)
 	if err := s2.Resume(now); err == nil {
 		t.Errorf("Resume() on running: want error, got nil")
@@ -274,7 +274,7 @@ func TestResume(t *testing.T) {
 func TestAdvance(t *testing.T) {
 	now := baseTime()
 
-	s, _ := New(testID, testTaskID, testName,
+	s, _ := New(testID, testTaskID, 0, testName,
 		mustCron(t, "0 * * * *"), validType, validMisfire, testTimezone, testCreated)
 	if err := s.Advance(now); err != nil {
 		t.Fatalf("Advance() error = %v", err)
@@ -296,7 +296,7 @@ func TestAdvance(t *testing.T) {
 func TestSyncAnchor(t *testing.T) {
 	// Rebuild 时锚点 == nextRun
 	initialNext := time.Date(2024, 1, 15, 11, 0, 0, 0, testLoc)
-	s, err := Rebuild(testID, testTaskID, testName,
+	s, err := Rebuild(testID, testTaskID, 0, testName,
 		mustCron(t, "0 * * * *"), validType,
 		initialNext, time.Time{}, validMisfire,
 		testTimezone, StatusRunning, testCreated,
@@ -402,7 +402,7 @@ func TestMisfirePlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := Rebuild(testID, testTaskID, testName,
+			s, err := Rebuild(testID, testTaskID, 0, testName,
 				mustCron(t, cronExpr), validType,
 				time.Time{}, tt.lastRun, tt.misfire,
 				testTimezone, StatusRunning, testCreated,
@@ -433,7 +433,7 @@ func TestMisfirePlan(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetter_ReturnsValue(t *testing.T) {
-	s, _ := New(testID, testTaskID, testName,
+	s, _ := New(testID, testTaskID, 0, testName,
 		mustCron(t, "0 9 * * *"), validType, validMisfire, testTimezone, testCreated)
 
 	c1 := s.Cron()
@@ -455,7 +455,7 @@ func TestGetter_ReturnsValue(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMisfirePlan_ZeroMaxPoints(t *testing.T) {
-	s, _ := Rebuild(testID, testTaskID, testName,
+	s, _ := Rebuild(testID, testTaskID, 0, testName,
 		mustCron(t, "0 * * * *"), validType,
 		time.Time{}, time.Date(2024, 1, 15, 1, 0, 0, 0, testLoc), MisfireFireAll,
 		testTimezone, StatusRunning, testCreated,
@@ -478,7 +478,7 @@ func TestMisfirePlan_ZeroMaxPoints(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMessages(t *testing.T) {
-	_, err := New(0, testTaskID, testName,
+	_, err := New(0, testTaskID, 0, testName,
 		mustCron(t, "0 9 * * *"), validType, validMisfire, testTimezone, testCreated)
 	if err == nil || !errors.Is(err, err) { // 简单兜底
 		t.Fatalf("expected error")

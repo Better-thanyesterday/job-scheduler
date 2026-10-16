@@ -37,7 +37,7 @@ func main() {
 	defer zap.L().Sync()
 
 	// 2. MySQL（分域连接池：system/task/schedule/execution/dag；锁走 schedule 库连接）
-	_, taskDB, scheduleDB, executionDB, _ := mysql.InitAll(settings.Conf.Load().MySqls)
+	_, taskDB, scheduleDB, executionDB, dagDB := mysql.InitAll(settings.Conf.Load().MySqls)
 	defer mysql.CloseAll()
 
 	// 3. 雪花算法（execution.New 内部用它分配执行 ID）
@@ -70,12 +70,13 @@ func main() {
 		nodeID = fmt.Sprintf("%s-%d", nodeID, os.Getpid())
 	}
 
-	// 7. 组件（只构造，不启动——等当选）。
-	//    repusher（投递补偿器）独立于分片：它自带幂等与阈值，
-	//    多实例并行只会有重复推送被抢票丢弃，无须按成员协调
+	// 7. 组件（只构造，不启动——多活跃分片模型下全节点常驻）。
+	//    repusher（投递补偿器）自带幂等与阈值，多实例并行安全
 	engine := scheduler.NewEngine(
 		repo.NewScheduleRepo(scheduleDB),
 		repo.NewExecutionRegistryRepo(executionDB),
+		repo.NewDagRepo(dagDB),
+		repo.NewDagExecutionRepo(dagDB),
 		repo.NewTaskSourceRepo(taskDB), pusher, locks, 0)
 	planner := scheduler.NewPlanner(repo.NewRetryPlannerRepo(executionDB),
 		repo.NewTaskSourceRepo(taskDB), pusher)

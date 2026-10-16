@@ -26,10 +26,10 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 | --- | --- |
 | 用户 | 注册 / 登录（JWT 鉴权）、账号状态校验、撞名自动重试 |
 | 任务 | CRUD、四种执行类型（HTTP / 脚本 / SQL / 消息）、领域级参数校验、按创建者的重名校验、**手动触发** |
-| 调度 | Cron 表达式（5/6 字段，秒级）、暂停/恢复、misfire 补偿策略（补发/跳过/合并，运行期与补偿期一致生效）、5s 全量校准 |
+| 调度 | Cron 表达式（5/6 字段，秒级）、**双触发目标（`target_type`：1-定时任务 / 2-定时 DAG）**、暂停/恢复、misfire 补偿策略（补发/跳过/合并，运行期与补偿期一致生效）、5s 全量校准 |
 | 执行 | gRPC 推送 + etcd 注册发现、原子抢票、失败重试（指数退避封顶 30min）、僵尸重试重推、超时收割、手动触发、结果回执 |
 | 结果存储 | 三段式：≤32KB 内联 result 列；超限全量 gzip 直传 MinIO（信封含 sha256 + head/tail 预览），对象 30 天自动过期，孤儿 GC 兜底；MinIO 不可用自动降级摘要；**预签名下载端点** |
-| DAG | YAML 导入 / 运行触发 / 依赖派发 / 失败阻断 / 编辑 / 启停 / 软删 / 节点数据流（上游输出 → 下游 stdin + `JOB_NODE_INPUTS` 环境变量，支持溢出信封回源） |
+| DAG | YAML 导入 / 运行触发 / **定时触发（挂 Cron，时间轮到点创建运行）** / 依赖派发 / 失败阻断 / 编辑 / 启停 / 软删 / 节点数据流（上游输出 → 下游 stdin + `JOB_NODE_INPUTS` 环境变量，支持溢出信封回源） |
 | 高可用 | 调度多活跃分片（etcd 成员租约 + HRW 再均衡）、触发互斥（分布式锁 + nextRun CAS）、Pending 执行独立重推器（Repusher）、MQ 不可用自动降级（执行不受影响） |
 | 安全与治理 | JWT 密钥配置化、全局限流（默认 20rps/突发 100，429 响应）、LIKE 通配符转义、SQL 全参数化 |
 | 可观测 | Prometheus 指标（api:9101 / scheduler:9100 / executor:9902）、Grafana 看板、Alertmanager 邮件告警 |
@@ -42,7 +42,7 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 
 ```text
                          ┌────────────────────────────────┐
-                         │   客户端（curl / OpenAPI 调用）│
+                         │   客户端                        │
                          └────────────────┬───────────────┘
                                           │ REST :8888
                                           ▼
@@ -50,26 +50,26 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 │                        api :8888（Gin）                            │
 │   JWT 鉴权 · 限流 · 任务/调度/执行/DAG 管理 · metrics :9101         │
 └──────┬──────────────────────────────────────┬──────────────────────┘
-       │ 手动触发：登记执行 + gRPC 直推        │ 发起 DAG 运行
+       │ 手动触发：登记执行 + gRPC 直推         │ 发起 DAG 运行
        ▼                                      ▼
 ┌────────────────────────┐          ┌───────────────────────────────┐
-│ scheduler ×N（多活跃） │          │           dag 引擎            │
-│ 时间轮 · HRW 分片      │          │ 结果唤醒 · 依赖派发 · 失败阻断  │ ◄───┐
-│ 规划 / reaper / 补偿   │          │ （与 scheduler 同层：触发/编排）│   │
-│ / repusher             │          └──────────────┬────────────────┘  │
-└──────────┬─────────────┘                        │ 派发下游节点：      │
-           │ 到点 gRPC 直推                       │ 登记 execution +    │
-           │                                      │ gRPC 直推 executor │
+│ scheduler ×N（多活跃） │           │           dag 引擎            │
+│ 时间轮 · HRW 分片      │           │ 结果唤醒 · 依赖派发 · 失败阻断  │ ◄─┐
+│ 规划 / reaper / 补偿   │           │ （触发/编排）                  │  │
+│ / repusher · 定时DAG   │          └──────────────┬────────────────┘  │
+└──────────┬─────────────┘                         │ 派发下游节点：     │
+           │ 任务到点：gRPC 直推                    │ 登记 execution +   │
+           │ DAG 到点：创建运行 → dag 引擎          │ gRPC 直推 executor │
            └──────────────┬───────────────────────┘                    │
                           ▼                                            │
 ┌──────────────────────────────────────────────────────────────────┐   │
-│            executor ×N :9901 gRPC（metrics :9902）               │   │
-│  HTTP │ 脚本 │ SQL │ 消息 │ 溢出→MinIO · 进程树击杀                 │  │
+│            executor ×N :9901 gRPC（metrics :9902）                │  │
+│  HTTP │ 脚本 │ SQL │ 消息 │ 溢出→MinIO                          │  │
 └──────┬──────────────────┬─────────────────────┬───────────────────┘  │
        │ 终态落库          │ 大结果直传           │ 结果回执             │
        ▼                  ▼                     ▼                      │
 ┌─────────────────────────────────┐  ┌──────────────────────────────┐  │
-│ MySQL 五域分库                   │  │ RabbitMQ（载荷/回执/唤醒）    │──┘
+│ MySQL                           │  │ RabbitMQ（载荷/回执/唤醒）    │──┘
 └─────────────────────────────────┘  └──────────────────────────────┘
 
    etcd（成员注册 · HRW 分片 · 分布式锁）── scheduler / dag / executor 共用
@@ -81,7 +81,7 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 | 服务 | 职责 | 端口 |
 | --- | --- | --- |
 | `api` | REST API（任务/调度/执行/DAG）、JWT 鉴权与限流、手动触发、结果下载 | 8888 / 9101 (metrics) |
-| `scheduler` | 时间轮调度引擎（多活跃 HRW 分片）、重试规划、超时收割、误期补偿、投递补偿 | 9100 (metrics) |
+| `scheduler` | 时间轮调度引擎（多活跃 HRW 分片）、**定时 DAG 触发（创建运行交 dag 引擎）**、重试规划、超时收割、误期补偿、投递补偿 | 9100 (metrics) |
 | `executor` | 领取并执行任务（HTTP/脚本/SQL/消息），进程树超时击杀，结果溢出存储 | 9901 (gRPC) / 9902 (metrics) |
 | `dag` | DAG 工作流引擎：运行推进、依赖派发、失败阻断、结果唤醒消费 | — |
 
@@ -158,6 +158,17 @@ curl -X POST http://127.0.0.1:8888/api/v1/login \
 
 随后建任务、挂调度、导入 DAG，或直接调 API。全量 API 见下表。
 
+**定时触发 DAG**：调度支持双目标——`target_type=1`（缺省）配 `task_id` 定时跑任务；`target_type=2` 配 `dag_id` 定时跑 DAG。到点由 scheduler 创建一次 DAG 运行（`triggered_by=Cron`），依赖派发与节点执行由 dag 引擎接管：
+
+```bash
+# 每天凌晨 2 点跑一次 DAG（单次验证可用 "* * * * *" 每分钟，或钉死分钟位 "51 11 * * *"）
+curl -X POST http://127.0.0.1:8888/api/v1/schedules/create \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"target_type":2,"dag_id":<dagId>,"name":"nightly-pipeline","cron_expr":"0 2 * * *"}'
+```
+
+注意：调度与 DAG 的启停相互独立——DAG 停用后到点的触发会被跳过（记 Warn 日志），但调度本身仍在推进 nextRun；长期停用建议同步暂停调度。
+
 ## API 概览
 
 统一前缀 `/api/v1`，统一响应 `{code, msg, data}`（成功 code=1000），鉴权 `Authorization: Bearer <token>`。
@@ -168,7 +179,7 @@ curl -X POST http://127.0.0.1:8888/api/v1/login \
 | POST/GET | /tasks/create、/tasks/list | 任务创建 / 分页查询（keyword/task_type/status 过滤，首页含精确 total） |
 | GET/PUT/DELETE | /tasks/:id | 任务详情 / 更新 / 取消 |
 | POST | /tasks/:id/trigger | **手动触发一次执行** |
-| POST/GET | /schedules/create、/schedules/list | 调度创建 / 查询 |
+| POST/GET | /schedules/create、/schedules/list | 调度创建 / 查询（**`target_type`：1-任务 / 2-DAG**，二选一配 `task_id` / `dag_id`） |
 | GET | /schedules/:id | 调度详情 |
 | POST/DELETE | /schedules/:id/pause、/resume、/:id（DELETE） | 暂停 / 恢复 / 删除 |
 | GET | /executions/list?task_id=&page=、/executions/:id | 执行历史（按任务分页）/ 详情 |
@@ -193,7 +204,7 @@ go test -race ./app/internal/...   # 竞态检测
 
 - [ ] 前端控制台补齐：DAG 视图、任务导入/模板、执行结果查看
 - [ ] 负载感知再均衡（当前按成员 HRW 分片，未按负载值放置）
-- [ ] 定时 DAG 任务
+- [x] 定时 DAG 任务：调度双目标（`target_type=2` + `dag_id`），时间轮到点创建 DAG 运行，依赖派发交 dag 引擎
 - [ ] 配置热更新闭环：MQ/DB 连接、限流阈值变更后组件自动重连/重读
 - [ ] 集中式限流：Redis 令牌桶替代进程内桶，集群总限流不再随实例数翻倍
 - [ ] 执行/调度历史归档：TTL 或按月分区，防 `executions`、`schedule_histories` 无限增长
@@ -205,7 +216,6 @@ go test -race ./app/internal/...   # 竞态检测
 
 - [ ] **事件驱动引擎**：MQ / Webhook / Kafka 事件源绑定任务触发，复用现有"登记 → gRPC 推送 → 抢票"链路
 - [ ] **规则引擎**：条件表达式触发（指标阈值 / 时间窗口 / 上游输出内容匹配），产出触发计划
-- [ ] 定时 DAG 任务：DAG 挂 Cron，由时间轮直接调度 DAG 运行
 - [ ] SubDAG 执行器：跨 DAG 编排复用（执行器框架已预留 TaskTypeSubDAG）
 - [ ] DAG 定义版本快照：在途运行固定启动时版本，定义编辑只影响新运行
 - [ ] 负载感知再均衡：分片放置参考 `PendingScheduleCount` 与节点负载，而不仅是成员 HRW

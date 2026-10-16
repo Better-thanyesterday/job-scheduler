@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	dagdomain "job-scheduler/app/internal/domain/dag"
 	"job-scheduler/app/internal/domain/coordination"
 	"job-scheduler/app/internal/domain/execution"
 	"job-scheduler/app/internal/domain/schedule"
@@ -94,6 +95,12 @@ func (e *Engine) trigger(ctx context.Context, s *schedule.Schedule, planned time
 		return err
 	}
 
+	// DAG 目标：不登记 execution，构造一次运行落库 job_dag 后即返回——
+	// dag 引擎进程按 ListRunning 轮询接管依赖派发（秒级 tick 兜底，无需唤醒）
+	if s.Target() == schedule.TargetDAG {
+		return e.triggerDAG(ctx, s, planned)
+	}
+
 	// 任务配置快照。任务被并发删除时 nextRun 已推进，不会重复触发
 	t, err := e.tasks.Get(ctx, s.TaskID())
 	if err != nil {
@@ -150,4 +157,45 @@ func BuildExecutionMessage(exec *execution.Execution, t *task.Task) *coordinatio
 		TimeoutSec: int32(t.Timeout().Seconds()),
 		TraceID:    exec.TraceID(),
 	}
+}
+
+// triggerDAG DAG 目标的触发分支：加载定义 → 构造运行（TriggerCron）→
+// 落库 job_dag 即返回——dag 引擎进程按 ListRunning 轮询接管依赖派发
+// （节点执行复用同一 gRPC 推送链路）。
+// 定义已删除/停用 → 记日志跳过（nextRun 已推进，不会重复触发）
+func (e *Engine) triggerDAG(ctx context.Context, s *schedule.Schedule, planned time.Time) error {
+	def, err := e.dagRepo.Get(ctx, s.DagID())
+	if err != nil {
+		return fmt.Errorf("加载 DAG 定义 %d: %w", s.DagID(), err)
+	}
+	if !def.Active() {
+		zap.L().Warn("DAG 已停用/删除，跳过本次触发（建议同步停用对应调度）",
+			zap.Int64("dag_id", s.DagID()), zap.Int64("schedule_id", s.ID()))
+		return nil
+	}
+	de, err := dagdomain.NewExecution(def, nil, dagdomain.TriggerCron, time.Now())
+	if err != nil {
+		return err
+	}
+	if err := e.dagExecRepo.Create(ctx, de); err != nil {
+		return err
+	}
+
+	// history / 指标与任务目标对齐：ExecutionID 落 DAG 运行 id
+	// （dag_executions.id，审计与 lag 统计的关联键）
+	now := time.Now()
+	if err := e.scheduleRepo.RecordHistory(ctx, &schedule.RunHistory{
+		ScheduleID:  s.ID(),
+		ExecutionID: de.ID(),
+		TriggerTime: now,
+		PlannedTime: planned,
+		Status:      1,
+		LagMS:       now.Sub(planned).Milliseconds(),
+		TriggeredBy: schedule.Cron,
+	}); err != nil {
+		zap.L().Error("记录调度历史失败", zap.Int64("schedule_id", s.ID()), zap.Error(err))
+	}
+	metrics.IncTaskTriggered(s.ID())
+	metrics.ObserveScheduleLag(now.Sub(planned).Seconds())
+	return nil
 }

@@ -24,11 +24,14 @@ func (n *FlexInt64) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// CreateScheduleReq 创建调度：把已有任务的触发规则挂到调度域
+// CreateScheduleReq 创建调度：把触发规则挂到任务或 DAG
 type CreateScheduleReq struct {
-	TaskID        FlexInt64 `json:"task_id" binding:"required"`                     // 关联任务ID（job_task 库，跨库只存 ID）
-	Name          string    `json:"name" binding:"required,max=128"`                // 调度名
-	CronExpr      string    `json:"cron_expr" binding:"required,max=64"`            // 5 或 6 字段 Cron 表达式
+	// 触发目标二选一：target_type=1（默认）配 task_id；=2 配 dag_id
+	TargetType    int       `json:"target_type" binding:"omitempty,oneof=1 2"` // 1-任务 2-DAG，缺省 1
+	TaskID        FlexInt64 `json:"task_id"`                                   // 关联任务ID（target_type=1 时必填）
+	DagID         FlexInt64 `json:"dag_id"`                                    // 关联DAG ID（target_type=2 时必填）
+	Name          string    `json:"name" binding:"required,max=128"`           // 调度名
+	CronExpr      string    `json:"cron_expr" binding:"required,max=64"`       // 5 或 6 字段 Cron 表达式
 	ScheduleType  int       `json:"schedule_type" binding:"omitempty,oneof=1 2 3"`  // 1-Cron 2-手动 3-API触发
 	MisfirePolicy int       `json:"misfire_policy" binding:"omitempty,oneof=1 2 3"` // 1-立即补发 2-跳过 3-合并
 	Timezone      string    `json:"timezone" binding:"omitempty,max=64"`            // 缺省 Asia/Shanghai
@@ -38,6 +41,8 @@ type CreateScheduleReq struct {
 type ScheduleResp struct {
 	ID            int64  `json:"id"`
 	TaskID        int64  `json:"task_id"`
+	DagID         int64  `json:"dag_id,omitempty"`
+	TargetType    int    `json:"target_type"` // 1-任务 2-DAG
 	Name          string `json:"name"`
 	CronExpr      string `json:"cron_expr"`
 	ScheduleType  int    `json:"schedule_type"`

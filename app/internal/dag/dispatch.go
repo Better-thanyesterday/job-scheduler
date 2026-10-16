@@ -68,6 +68,10 @@ func (e *Engine) dispatchReady(ctx context.Context, de *dagdomain.DagExecution,
 		if err != nil {
 			return nil, dispatched, fmt.Errorf("new execution for node %q: %w", n.NodeID(), err)
 		}
+		// 归属落库：executions.dag_execution_id/dag_node_id 是执行域反查 DAG 的关联键
+		if err := exec.AttachDAG(de.ID(), n.NodeID()); err != nil {
+			return nil, dispatched, fmt.Errorf("attach dag to execution for node %q: %w", n.NodeID(), err)
+		}
 		if err := e.execReg.Create(ctx, exec); err != nil {
 			return nil, dispatched, fmt.Errorf("register execution for node %q: %w", n.NodeID(), err)
 		}

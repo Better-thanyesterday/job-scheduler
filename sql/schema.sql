@@ -43,7 +43,9 @@ CREATE TABLE `schedule_histories` (
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `schedules` (
   `id` bigint NOT NULL,
-  `task_id` bigint NOT NULL COMMENT '关联任务ID',
+  `task_id` bigint NOT NULL COMMENT '触发目标为任务时的任务ID（target_type=1）',
+  `target_type` tinyint NOT NULL DEFAULT '1' COMMENT '触发目标：1-任务 2-DAG',
+  `dag_id` bigint NOT NULL DEFAULT '0' COMMENT '触发目标为DAG时的DAG ID（target_type=2）',
   `name` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,
   `cron_expr` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
   `schedule_type` tinyint NOT NULL DEFAULT '1' COMMENT '1-Cron 2-手动 3-API触发',
@@ -59,6 +61,7 @@ CREATE TABLE `schedules` (
   PRIMARY KEY (`id`),
   KEY `idx_schedules_status_next_run` (`status`,`next_run_time`),
   KEY `idx_schedules_task_id` (`task_id`,`status`),
+  KEY `idx_schedules_dag_id` (`dag_id`,`status`),
   KEY `idx_schedules_created_by` (`created_by`,`status`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

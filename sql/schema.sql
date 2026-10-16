@@ -214,3 +214,8 @@ CREATE TABLE `users` (
   KEY `idx_users_status_role` (`status`,`role`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+-- 2026-10-14 定时 DAG：调度目标支持任务/DAG（方案：调度直发 dag 运行）
+-- ALTER TABLE job_schedule.schedules
+--   ADD COLUMN target_type TINYINT NOT NULL DEFAULT 1 COMMENT '触发目标：1-任务 2-DAG' AFTER task_id,
+--   ADD COLUMN dag_id BIGINT NULL COMMENT 'DAG ID（target_type=2 时使用）' AFTER target_type;

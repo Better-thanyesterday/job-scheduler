@@ -9,6 +9,8 @@ import (
 type Schedule struct {
 	id            int64
 	taskID        int64
+	targetType    TargetType // 触发目标：1-任务 2-DAG
+	dagID         int64      // target=DAG 时有效；taskID 与 dagID 互斥
 	name          string
 	cron          task.Cron
 	typ           ScheduleType
@@ -24,15 +26,22 @@ type Schedule struct {
 }
 
 // 初始 nextRun 不在这里算：创建后由调用方（api）调 InitNextRun 落库，
-// engine 装载时也会对 nextRun 为零的 Running 调度兜底计算
-func New(id, taskID int64, name string, cron task.Cron, typ ScheduleType,
+// engine 装载时也会对 nextRun 为零的 Running 调度兜底计算。
+// 触发目标二选一：任务（taskID>0）或 DAG（dagID>0），都填或都不填均拒绝
+func New(id, taskID, dagID int64, name string, cron task.Cron, typ ScheduleType,
 	misfire MisfirePolicy, timezone string, createdBy int64) (*Schedule, error) {
 
 	if id <= 0 {
 		return nil, fmt.Errorf("schedule: invalid id %d", id)
 	}
-	if taskID <= 0 {
-		return nil, fmt.Errorf("schedule: invalid task_id %d", taskID)
+	var target TargetType
+	switch {
+	case taskID > 0 && dagID == 0:
+		target = TargetTask
+	case dagID > 0 && taskID == 0:
+		target = TargetDAG
+	default:
+		return nil, fmt.Errorf("schedule: task_id 与 dag_id 必须二选一（task=%d dag=%d）", taskID, dagID)
 	}
 	if name == "" {
 		return nil, fmt.Errorf("schedule: name is empty")
@@ -47,7 +56,7 @@ func New(id, taskID int64, name string, cron task.Cron, typ ScheduleType,
 		return nil, fmt.Errorf("schedule: invalid timezone %q: %w", timezone, err)
 	}
 	return &Schedule{
-		id: id, taskID: taskID, name: name, cron: cron, typ: typ,
+		id: id, taskID: taskID, targetType: target, dagID: dagID, name: name, cron: cron, typ: typ,
 		misfire: misfire, timezone: timezone,
 		status: StatusRunning, createdBy: createdBy,
 	}, nil

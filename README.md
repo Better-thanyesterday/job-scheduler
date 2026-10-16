@@ -23,7 +23,7 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 ### 已实现 ✅
 
 | 模块 | 能力 |
-|---|---|
+| --- | --- |
 | 用户 | 注册 / 登录（JWT 鉴权）、账号状态校验、撞名自动重试 |
 | 任务 | CRUD、四种执行类型（HTTP / 脚本 / SQL / 消息）、领域级参数校验、按创建者的重名校验、**手动触发** |
 | 调度 | Cron 表达式（5/6 字段，秒级）、暂停/恢复、misfire 补偿策略（补发/跳过/合并，运行期与补偿期一致生效）、5s 全量校准 |
@@ -36,8 +36,7 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 
 ### 开发中 🚧
 
-- 定时 DAG 任务
-- 压测基线报告（wrk Lua）
+- 前端UI
 
 ## 架构
 
@@ -80,7 +79,7 @@ job-scheduler 是一个**多活跃节点**可部署的分布式任务调度平�
 **服务清单**
 
 | 服务 | 职责 | 端口 |
-|---|---|---|
+| --- | --- | --- |
 | `api` | REST API（任务/调度/执行/DAG）、JWT 鉴权与限流、手动触发、结果下载 | 8888 / 9101 (metrics) |
 | `scheduler` | 时间轮调度引擎（多活跃 HRW 分片）、重试规划、超时收割、误期补偿、投递补偿 | 9100 (metrics) |
 | `executor` | 领取并执行任务（HTTP/脚本/SQL/消息），进程树超时击杀，结果溢出存储 | 9901 (gRPC) / 9902 (metrics) |
@@ -164,7 +163,7 @@ curl -X POST http://127.0.0.1:8888/api/v1/login \
 统一前缀 `/api/v1`，统一响应 `{code, msg, data}`（成功 code=1000），鉴权 `Authorization: Bearer <token>`。
 
 | 方法 | 路径 | 说明 |
-|---|---|---|
+| --- | --- | --- |
 | POST | /register、/login | 注册 / 登录 |
 | POST/GET | /tasks/create、/tasks/list | 任务创建 / 分页查询（keyword/task_type/status 过滤，首页含精确 total） |
 | GET/PUT/DELETE | /tasks/:id | 任务详情 / 更新 / 取消 |
@@ -225,7 +224,6 @@ go test -race ./app/internal/...   # 竞态检测
 - [ ] K8s Job / FaaS 执行器插件
 - [ ] 执行结果检索（Clickhouse / ES）
 - [ ] 跨集群异地多活
-
 
 ## 已知限制
 
